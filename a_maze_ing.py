@@ -12,7 +12,7 @@ def on_close(data: object) -> None:
 
 
 if __name__ == "__main__":
-    # 1. Initialisation
+    # 1. Initialisation 1
     m: Mlx = Mlx()
     mlx_ptr = m.mlx_init()
 
