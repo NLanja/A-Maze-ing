@@ -8,6 +8,14 @@ WEST: int = 8
 
 ALL_WALLS: int = NORTH | EAST | SOUTH | WEST
 
+PATTERN_42: list[list[int]] = [
+    [1, 0, 1, 0, 1, 1, 1],
+    [1, 0, 1, 0, 0, 0, 1],
+    [1, 1, 1, 0, 1, 1, 1],
+    [0, 0, 1, 0, 1, 0, 0],
+    [0, 0, 1, 0, 1, 1, 1],
+]
+
 OPPOSITE: dict[int, int] = {
     NORTH: SOUTH,
     EAST: WEST,
@@ -43,6 +51,10 @@ class MazeGenerator:
             [False for _ in range(self.width)]
             for _ in range(self.height)
         ]
+        # 1. Draw 42 pattern first
+        self._draw_42(visited)
+
+        # 2. Launch DFS (avoids 42 cells)
         self._dfs(0, 0, visited)
 
     def _dfs(
@@ -79,6 +91,23 @@ class MazeGenerator:
         if y < 0 or y >= self.height:
             return False
         return True
+
+    def _draw_42(self, visited: list[list[bool]]) -> None:
+        """Draws the 42 pattern in the maze center.
+
+    Args:
+        visited: grid of visited cells to mark 42 cells.
+    """
+        start_x = (self.width - 7) // 2
+        start_y = (self.height - 5) // 2
+
+        for row in range(5):
+            for col in range(7):
+                if PATTERN_42[row][col] == 1:
+                    x = start_x + col
+                    y = start_y + row
+                    self.grid[y][x] = ALL_WALLS
+                    visited[y][x] = True
 
     def _remove_wall(
         self,

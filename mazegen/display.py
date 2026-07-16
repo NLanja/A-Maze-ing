@@ -17,3 +17,9 @@
 
 #         # Last closing line
 #     _draw_last_line(maze)
+
+
+width, height = 20, 15
+start_x = (width - 7) // 2
+start_y = (height - 5) // 2
+print(start_x, start_y)
