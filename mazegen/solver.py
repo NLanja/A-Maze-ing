@@ -11,6 +11,7 @@ from typing import Optional
 
 from mazegen.generator import DIRECTION, EAST, NORTH, SOUTH, WEST
 
+
 DIRECTION_LETTER: dict[int, str] = {
     NORTH: "N",
     EAST: "E",
