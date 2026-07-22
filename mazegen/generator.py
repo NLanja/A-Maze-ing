@@ -3,8 +3,7 @@ Maze generator with 42 pattern support.
 """
 
 import random
-from typing import Optional
-
+from config import MazeConfig
 NORTH: int = 1
 EAST: int = 2
 SOUTH: int = 4
@@ -47,7 +46,10 @@ class MazeGenerator:
         - Error message if pattern cannot be placed
     """
 
-    def __init__(self, width: int, height: int, seed: Optional[int] = None) -> None:
+    def __init__(
+            self,
+            config: MazeConfig
+            ) -> None:
         """
         Initialize maze generator.
 
@@ -56,9 +58,10 @@ class MazeGenerator:
             height: Number of cells vertically
             seed: Optional seed for reproducibility
         """
-        self.width = width
-        self.height = height
-        self.seed = seed
+        self.config = config
+        self.width = config.width
+        self.height = config.height
+        self.seed = config.seed
         self.pattern_placed = False
         self.grid = [
             [ALL_WALLS for _ in range(self.width)]
@@ -79,11 +82,15 @@ class MazeGenerator:
         if self._can_place_42():
             self._draw_42(visited)
             self.pattern_placed = True
-            print(f"✅ 42 pattern placed successfully ({self.width}x{self.height})")
+            print(
+                f"42 pattern placed successfully ("
+                f"{self.width}x{self.height})")
         else:
             self.pattern_placed = False
-            print(f"⚠️ Error: 42 pattern omitted - maze {self.width}x{self.height} "
-                  f"is too small (need at least 12x10)")
+            print(
+                f"Error: 42 pattern omitted - maze "
+                f"{self.width}x{self.height}"
+                "is too small (need at least 12x10)")
 
         # 2. Launch DFS from entry (0,0)
         self._dfs(0, 0, visited)
@@ -130,9 +137,15 @@ class MazeGenerator:
                 if PATTERN_42[row][col] == 1:
                     x = start_x + col
                     y = start_y + row
-                    if 0 <= x < self.width and 0 <= y < self.height:
-                        self.grid[y][x] = ALL_WALLS
-                        visited[y][x] = True
+                    if self.config.entry != (x, y) and \
+                            self.config.exit != (x, y):
+                        if 0 <= x < self.width and 0 <= y < self.height:
+                            self.grid[y][x] = ALL_WALLS
+                            visited[y][x] = True
+                    else:
+                        raise Exception(
+                            "Error: 42 pattern overlaps with entry or exit "
+                            "point.")
 
     def _dfs(self, x: int, y: int, visited: list[list[bool]]) -> None:
         """
@@ -161,7 +174,13 @@ class MazeGenerator:
         """Checks if coordinates are inside the grid."""
         return 0 <= x < self.width and 0 <= y < self.height
 
-    def _remove_wall(self, x: int, y: int, nx: int, ny: int, direction: int) -> None:
+    def _remove_wall(
+            self,
+            x: int,
+            y: int,
+            nx: int,
+            ny: int,
+            direction: int) -> None:
         """
         Opens the wall between two neighboring cells.
 

@@ -5,11 +5,14 @@ parameters, validates it, and exposes the result as a MazeConfig object.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 
 
 class ConfigError(Exception):
     """Raised when the configuration file is missing, malformed or invalid."""
+
+
+REQUIRED_KEYS = {"WIDTH", "HEIGHT", "ENTRY", "EXIT", "OUTPUT_FILE", "PERFECT"}
 
 
 @dataclass
@@ -26,19 +29,19 @@ class MazeConfig:
         seed: optional RNG seed for reproducibility.
     """
 
-    width: int
-    height: int
-    entry: tuple[int, int]
-    exit: tuple[int, int]
-    output_file: str
-    perfect: bool
-    seed: Optional[int] = None
+    def __init__(self, path: str) -> None:
+        """Parses and validates a maze configuration file."""
+        config_dict = parse_config(path)
+        self.width: int = config_dict["width"]
+        self.height: int = config_dict["height"]
+        self.entry: tuple[int, int] = config_dict["entry"]
+        self.exit: tuple[int, int] = config_dict["exit"]
+        self.output_file: str = config_dict["output_file"]
+        self.perfect: bool = config_dict["perfect"]
+        self.seed: Optional[int] = config_dict["seed"]
 
 
-REQUIRED_KEYS = {"WIDTH", "HEIGHT", "ENTRY", "EXIT", "OUTPUT_FILE", "PERFECT"}
-
-
-def parse_config(path: str) -> MazeConfig:
+def parse_config(path: str) -> dict[str, Any]:
     """Parses and validates a maze configuration file.
 
     Args:
@@ -65,7 +68,8 @@ def parse_config(path: str) -> MazeConfig:
             continue
         if "=" not in line:
             raise ConfigError(
-                f"{path}:{line_no}: invalid syntax (expected KEY=VALUE): '{line}'"
+                f"{path}:{line_no}:"
+                f"invalid syntax (expected KEY=VALUE): '{line}'"
             )
         key, _, value = line.partition("=")
         key = key.strip().upper()
@@ -97,18 +101,22 @@ def parse_config(path: str) -> MazeConfig:
             raise ConfigError(
                 f"SEED must be an integer, got '{raw['SEED']}'"
             ) from exc
+    try:
+        _validate_bounds(width, height, entry, exit_)
+    except ConfigError as exc:
+        print(f"Config validation error: {exc}  ")
+        exit(1)
 
-    _validate_bounds(width, height, entry, exit_)
-
-    return MazeConfig(
-        width=width,
-        height=height,
-        entry=entry,
-        exit=exit_,
-        output_file=output_file,
-        perfect=perfect,
-        seed=seed,
-    )
+    res: dict[str, Any] = {
+        "width": width,
+        "height": height,
+        "entry": entry,
+        "exit": exit_,
+        "output_file": output_file,
+        "perfect": perfect,
+        "seed": seed,
+    }
+    return res
 
 
 def _parse_positive_int(value: str, key: str) -> int:
@@ -134,7 +142,8 @@ def _parse_coordinates(value: str, key: str) -> tuple[int, int]:
             f"{key} coordinates must be integers, got '{value}'"
         ) from exc
     if x < 0 or y < 0:
-        raise ConfigError(f"{key} coordinates must be non-negative, got '{value}'")
+        raise ConfigError(
+            f"{key} coordinates must be non-negative, got '{value}'")
     return x, y
 
 
