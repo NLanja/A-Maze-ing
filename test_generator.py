@@ -1,90 +1,70 @@
-"""
-Simple maze generator + solver test.
+"""Sanity test for the maze generator + BFS solver pipeline.
+
+Not part of the graded deliverable (see subject III.3): this script is
+only meant to be run manually during development, to check that
+generation, solving, and file I/O stay consistent with each other.
+Run it with: python3 test_generator.py
 """
 
-from config import ConfigError, parse_config
+from a_maze_ing import save_maze
+from config import ConfigError, MazeConfig
 from mazegen.generator import MazeGenerator
 from mazegen.solver import load_hex_grid, solve
 
 
-def save_hex_maze(
-    maze: MazeGenerator,
-    entry: tuple[int, int],
-    exit_: tuple[int, int],
-    path: list[str],
-    filename: str = "output_maze.txt",
-) -> None:
-    """
-    Save a maze to a file: hex grid, blank line, entry, exit, path.
-
-    Matches the output file format required by the subject (IV.5).
-
-    Args:
-        maze: MazeGenerator object
-        entry: (x, y) entry coordinates
-        exit_: (x, y) exit coordinates
-        path: shortest path as a list of 'N'/'E'/'S'/'W' letters
-        filename: Output file name
-    """
-    with open(filename, "w") as f:
-        for row in maze.grid:
-            hex_row = ''.join(f'{cell:X}' for cell in row)
-            f.write(hex_row + '\n')
-        f.write('\n')
-        f.write(f'{entry[0]},{entry[1]}\n')
-        f.write(f'{exit_[0]},{exit_[1]}\n')
-        f.write(''.join(path) + '\n')
-
-
 def print_hex_maze(maze: MazeGenerator) -> None:
-    """
-    Print a maze in hexadecimal format.
+    """Prints a maze in hexadecimal format, one row per line.
 
     Args:
-        maze: MazeGenerator object
+        maze: the generated maze to print.
     """
     for row in maze.grid:
-        hex_row = ''.join(f'{cell:X}' for cell in row)
-        print(hex_row)
+        print("".join(f"{cell:X}" for cell in row))
 
 
-# ============================================
-# MAIN PROGRAM
-# ============================================
+def main(config_path: str = "config.txt") -> None:
+    """Loads the config, generates the maze, solves it, and saves it.
 
-def main() -> None:
-    """Load the config, generate the maze, solve it, and save it."""
+    Args:
+        config_path: path to the configuration file to use.
+    """
     try:
-        cfg = parse_config("config.txt")
+        config = MazeConfig(config_path)
     except ConfigError as exc:
         print(f"Error: {exc}")
         return
 
-    # 1. Generate the maze using the parameters read from config.txt
-    maze = MazeGenerator(width=cfg.width, height=cfg.height, seed=cfg.seed)
+    # 1. Generate the maze using the parameters read from the config file
+    maze = MazeGenerator(config)
     maze.generate()
 
-    print(f"entry={cfg.entry} exit={cfg.exit} perfect={cfg.perfect}")
+    print(
+        f"entry={config.entry} exit={config.exit} "
+        f"perfect={config.perfect}"
+    )
     print_hex_maze(maze)
 
     # 2. Solve it (BFS -> shortest path) directly from the in-memory grid
-    path = solve(maze.grid, cfg.entry, cfg.exit)
+    path = solve(maze.grid, config.entry, config.exit)
     if path is None:
-        print("Error: no path found between entry and exit "
-              "(maze is not connected)")
+        print(
+            "Error: no path found between entry and exit "
+            "(maze is not connected)"
+        )
         return
-    print("path:", ''.join(path))
+    print("path:", "".join(path))
 
     # 3. Save grid + entry + exit + path to the output file
-    save_hex_maze(maze, cfg.entry, cfg.exit, path, cfg.output_file)
+    save_maze(maze, config.entry, config.exit, path, config.output_file)
 
     # 4. Sanity check: reload the hex grid straight from the saved file
     #    and re-solve it, to prove the solver works independently of
     #    the in-memory MazeGenerator object (as required for reuse).
-    reloaded_grid = load_hex_grid(cfg.output_file)
-    reloaded_path = solve(reloaded_grid, cfg.entry, cfg.exit)
-    print("path re-solved from file:", ''.join(reloaded_path or []))
+    reloaded_grid = load_hex_grid(config.output_file)
+    reloaded_path = solve(reloaded_grid, config.entry, config.exit)
+    print("path re-solved from file:", "".join(reloaded_path or []))
     assert reloaded_path == path, "solver mismatch between memory and file!"
+    print("OK: in-memory and reloaded-from-file paths match.")
 
 
 if __name__ == "__main__":
