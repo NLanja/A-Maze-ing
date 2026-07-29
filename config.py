@@ -27,6 +27,12 @@ class MazeConfig:
         output_file: path of the file where the maze will be written.
         perfect: whether the maze must be a perfect maze.
         seed: optional RNG seed for reproducibility.
+        algorithm: optional solving algorithm name ("bfs" by default).
+            Not validated here on purpose (see note in parse_config)
+            to avoid a circular import with mazegen.solver, which
+            itself imports mazegen.generator, which imports this
+            module. Unknown names are rejected later by
+            mazegen.solver.solve(), which raises ValueError.
     """
 
     def __init__(self, path: str) -> None:
@@ -39,6 +45,7 @@ class MazeConfig:
         self.output_file: str = config_dict["output_file"]
         self.perfect: bool = config_dict["perfect"]
         self.seed: Optional[int] = config_dict["seed"]
+        self.algorithm: str = config_dict["algorithm"]
 
 
 def parse_config(path: str) -> dict[str, Any]:
@@ -72,7 +79,7 @@ def parse_config(path: str) -> dict[str, Any]:
                 f"invalid syntax (expected KEY=VALUE): '{line}'"
             )
         key, _, value = line.partition("=")
-        key = key.strip().upper()
+        key = key.strip().upper()  # Normalize to uppercase (case-insensitive)
         value = value.strip()
         if not key:
             raise ConfigError(f"{path}:{line_no}: empty key")
@@ -101,6 +108,13 @@ def parse_config(path: str) -> dict[str, Any]:
             raise ConfigError(
                 f"SEED must be an integer, got '{raw['SEED']}'"
             ) from exc
+
+    # Optional: which shortest-path algorithm to use ("bfs" or
+    # "astar"). Not validated against mazegen.solver.ALGORITHMS here
+    # to avoid a circular import (see MazeConfig docstring); an
+    # unknown name is instead rejected by solve() when actually used.
+    algorithm = raw.get("ALGORITHM", "bfs").strip().lower() or "bfs"
+
     try:
         _validate_bounds(width, height, entry, exit_)
     except ConfigError as exc:
@@ -115,6 +129,7 @@ def parse_config(path: str) -> dict[str, Any]:
         "output_file": output_file,
         "perfect": perfect,
         "seed": seed,
+        "algorithm": algorithm,
     }
     return res
 

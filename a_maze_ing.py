@@ -112,7 +112,10 @@ def main() -> None:
             f"({config.width}x{config.height})."
         )
 
-    path = solve(maze.grid, config.entry, config.exit)
+    try:
+        path = solve(maze.grid, config.entry, config.exit, config.algorithm) 
+    except ValueError as  exc:
+        error_exit(str(exc))
     if path is None:
         error_exit("no path found between entry and exit (maze not connected)")
 
