@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """MLX display test."""
 
 from mazegen.generator import MazeGenerator
@@ -17,15 +16,15 @@ def main() -> None:
 
     # Check 42 pattern
     if maze.pattern_placed:
-        print("✅ 42 pattern placed")
+        print("42 pattern placed")
 
     else:
-        print("⚠️ 42 pattern omitted (maze too small)")
+        print("42 pattern omitted (maze too small)")
 
-    print(f"✅ Maze {maze.width}x{maze.height} generated")
+    print(f"Maze {maze.width}x{maze.height} generated")
 
     # Display with MLX
-    print("🖥️ Opening MLX window...")
+    print("Opening MLX window...")
     display = MlxDisplay(maze, cell_size=35, entry=entry, exit_pos=exit_pos)
     display.run()
 
