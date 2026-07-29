@@ -24,14 +24,13 @@ class MlxDisplay:
 
     # Default colors (0xAARRGGBB format)
     COLORS: Dict[str, int] = {
-        'wall': 0xFF2C3E50,      # Walls - dark blue
-        'floor': 0xFFFFFF00,     # Floor - off-white
-        'entry': 0xFF2ECC71,     # Entry - green
-        'exit': 0xFFE74C3C,      # Exit - red
-        'path': 0xFFF1C40F,      # Path - yellow
-        'pattern42': 0xFF9B59B6,    # 42 pattern - purple
+        'wall': 0xFFFFFFFF,      # Walls - WHITE
+        'floor': 0xFF000000,     # Floor - BLACK
+        'entry': 0xFF2ECC71,     # Entry - GREEN (keep visible)
+        'exit': 0xFFE74C3C,      # Exit - RED (keep visible)
+        'path': 0xFF888888,      # Path - MEDIUM GRAY
+        'pattern42': 0xFFFFFFFF,  # 42 pattern - WHITE
     }
-
     # Wall color (changeable via 'C' key)
     _wall_color: int = COLORS['wall']
 
@@ -49,7 +48,7 @@ class MlxDisplay:
         """
         self.maze = maze
         self.cell_size = cell_size
-        self.show_path: bool = True
+        self.show_path: bool = False  # Path hidden by default
 
         # Store entry and exit
         self.entry = entry
@@ -57,6 +56,14 @@ class MlxDisplay:
             self.exit_pos = (maze.width - 1, maze.height - 1)
         else:
             self.exit_pos = exit_pos
+
+        # --- Animation attributes ---
+        self._path_cells: List[Tuple[int, int]] = []
+        self._path_progress: int = 0
+        self._animating: bool = False
+        self._frame_counter: int = 0
+        self._animation_speed: int = 1
+        self._path_dir_map: Dict[Tuple[int, int], str] = {}
 
         # Solve the path using the solver
         self._path_coords: Set[Tuple[int, int]] = set()
@@ -96,25 +103,29 @@ class MlxDisplay:
 
         print("🎮 MLX Commands:")
         print("  [R] Re-generate a new maze")
-        print("  [P] Show/Hide the solution path")
+        print("  [P] Show/Hide the solution path (step by step)")
         print("  [C] Change wall colors")
         print("  [Q] Quit")
 
     def _solve_path(self) -> None:
-        """Solve the maze using the solver."""
+        """Solve the maze and store ordered cells with directions."""
         path_dirs = solve(self.maze.grid, self.entry, self.exit_pos)
 
         if path_dirs is None:
             self._path_directions = []
             self._path_coords = set()
+            self._path_cells = []
+            self._path_dir_map = {}
             return
 
         self._path_directions = path_dirs
 
-        # Convert directions to coordinates
+        # Convert directions to coordinates (ordered list)
         x, y = self.entry
         coords = [(x, y)]
+        dir_map = {}
         for d in path_dirs:
+            dir_map[(x, y)] = d  # Store direction for current cell
             if d == 'N':
                 y -= 1
             elif d == 'S':
@@ -125,7 +136,9 @@ class MlxDisplay:
                 x -= 1
             coords.append((x, y))
 
+        self._path_cells = coords
         self._path_coords = set(coords)
+        self._path_dir_map = dir_map
 
     def _update_path(self) -> None:
         """Update path after maze regeneration."""
@@ -168,10 +181,58 @@ class MlxDisplay:
                 err += dx
                 y1 += sy
 
+    def _draw_thick_line(
+            self, x1: int, y1: int, x2: int, y2: int,
+            color: int, thickness: int = 4) -> None:
+        """Draw a thick line."""
+        if x1 == x2:  # Vertical line
+            for i in range(thickness):
+                self._draw_line(x1 - i, y1, x2 - i, y2, color)
+        elif y1 == y2:  # Horizontal line
+            for i in range(thickness):
+                self._draw_line(x1, y1 - i, x2, y2 - i, color)
+        else:  # Diagonal line - offset multiple lines
+            for i in range(thickness):
+                self._draw_line(x1 - i, y1 - i, x2 - i, y2 - i, color)
+
+    def _draw_arrow(self, cx: int, cy: int, direction: str, color: int,
+                    size: int = 10, thickness: int = 2) -> None:
+        """Draw an arrow centered at (cx, cy) pointing in direction."""
+        half = size // 2
+
+        if direction == 'N':
+            x1, y1 = cx, cy + half
+            x2, y2 = cx, cy - half
+            x3, y3 = cx - half//2, cy - half//2
+            x4, y4 = cx + half//2, cy - half//2
+        elif direction == 'S':
+            x1, y1 = cx, cy - half
+            x2, y2 = cx, cy + half
+            x3, y3 = cx - half//2, cy + half//2
+            x4, y4 = cx + half//2, cy + half//2
+        elif direction == 'E':
+            x1, y1 = cx - half, cy
+            x2, y2 = cx + half, cy
+            x3, y3 = cx + half//2, cy - half//2
+            x4, y4 = cx + half//2, cy + half//2
+        elif direction == 'W':
+            x1, y1 = cx + half, cy
+            x2, y2 = cx - half, cy
+            x3, y3 = cx - half//2, cy - half//2
+            x4, y4 = cx - half//2, cy + half//2
+        else:
+            return
+
+        # Body of the arrow
+        self._draw_thick_line(x1, y1, x2, y2, color, thickness)
+        # Arrowhead
+        self._draw_line(x2, y2, x3, y3, color)
+        self._draw_line(x2, y2, x4, y4, color)
+
     def _clear(self) -> None:
         """Clear the buffer to black."""
         size = self.sl * self.height
-        self.data[0:size] = b'\x00\x00\x00\xff' * (size // 4)  # ← NOIR
+        self.data[0:size] = b'\x00\x00\x00\xff' * (size // 4)
 
     def _flush(self) -> None:
         """Send the buffer to the window."""
@@ -180,75 +241,90 @@ class MlxDisplay:
 
     def _render(self, data: Any) -> None:
         """Called every frame by mlx_loop_hook."""
+        # Progressive animation
+        if self._animating:
+            self._frame_counter += 1
+            if self._frame_counter >= self._animation_speed:
+                self._frame_counter = 0
+                if self._path_progress < len(self._path_cells):
+                    self._path_progress += 1
+                else:
+                    self._animating = False  # Animation complete
+
         self._clear()
         self._draw_maze()
         self._flush()
         self._draw_info()
 
-    def _draw_thick_line(
-            self, x1: int, y1: int, x2: int, y2: int,
-            color: int, thickness: int = 4) -> None:
-        """Dessine une ligne épaisse."""
-        if x1 == x2:  # Ligne verticale
-            for i in range(thickness):
-                self._draw_line(x1 - i, y1, x2 - i, y2, color)
-        elif y1 == y2:  # Ligne horizontale
-            for i in range(thickness):
-                self._draw_line(x1, y1 - i, x2, y2 - i, color)
-        else:
-            # Ligne diagonale - on utilise plusieurs lignes décalées
-            for i in range(thickness):
-                self._draw_line(x1 - i, y1 - i, x2 - i, y2 - i, color)
-
     def _draw_maze(self) -> None:
-        """Draw the maze using self.maze.grid directly."""
+        """Draw the maze with progressive path display."""
         grid = self.maze.grid
 
-        # Use path coords only if show_path is True
-        path_coords = self._path_coords if self.show_path else set()
+        # Visible path cells (progressive or full)
+        visible_path = set()
+        if self.show_path:
+            if self._animating:
+                limit = self._path_progress
+            else:
+                limit = len(self._path_cells)
+            visible_path = set(self._path_cells[:limit])
 
         for y in range(self.maze.height):
             for x in range(self.maze.width):
                 px = x * self.cell_size + 1
                 py = y * self.cell_size + 1
-
                 walls = grid[y][x]
 
-                entry_x, entry_y = self.entry
-                exit_x, exit_y = self.exit_pos
-                if (x, y) == (entry_x, entry_y):
+                # --- Determine background color ---
+                if (x, y) == self.entry:
                     color = self.COLORS['entry']
-                    self._draw_rect(
-                        px, py, self.cell_size, self.cell_size, color)
-                elif (x, y) == (exit_x, exit_y):
+                elif (x, y) == self.exit_pos:
                     color = self.COLORS['exit']
-                    self._draw_rect(
-                        px, py, self.cell_size, self.cell_size, color)
-                elif (x, y) in path_coords:
-                    color = self.COLORS['path']
-                    self._draw_rect(
-                        px, py, self.cell_size, self.cell_size, color)
+                elif (x, y) in visible_path:
+                    color = self.COLORS['path']  # Highlight path cells
                 elif walls == ALL_WALLS:
                     color = self.COLORS['pattern42']
-                    self._draw_rect(
-                        px, py, self.cell_size, self.cell_size, color)
+                else:
+                    color = self.COLORS.get('floor', 0xFFFFFFFF)
 
+                self._draw_rect(px, py, self.cell_size, self.cell_size, color)
+
+                # --- Draw arrow if cell is in path (except entry/exit) ---
+                pos = (x, y)
+                if (
+                     pos in visible_path and
+                     pos not in (self.entry, self.exit_pos)):
+                    direction = self._path_dir_map.get((x, y))
+                    if direction:
+                        cx = px + self.cell_size // 2
+                        cy = py + self.cell_size // 2
+                        arrow_size = self.cell_size // 3  # Smaller arrow
+                        self._draw_arrow(
+                            cx, cy, direction,
+                            self.COLORS['path'],
+                            size=arrow_size, thickness=2)
+
+                # --- Walls ---
                 wall_color = self._wall_color
                 if walls & EAST:
-                    self._draw_thick_line(px + self.cell_size, py,
-                                          px + self.cell_size,
-                                          py + self.cell_size, wall_color)
+                    self._draw_thick_line(
+                        px + self.cell_size, py,
+                        px + self.cell_size, py + self.cell_size,
+                        wall_color, thickness=2)
                 if walls & SOUTH:
                     self._draw_thick_line(px, py + self.cell_size,
                                           px + self.cell_size,
-                                          py + self.cell_size, wall_color)
+                                          py + self.cell_size,
+                                          wall_color, thickness=2)
 
         # Outer borders
         wall_color = self._wall_color
-        self._draw_rect(0, 0, self.width, 1, wall_color)
-        self._draw_rect(0, self.height - 1, self.width, 1, wall_color)
-        self._draw_rect(0, 0, 1, self.height, wall_color)
-        self._draw_rect(self.width - 1, 0, 1, self.height, wall_color)
+        self._draw_thick_line(0, 0, self.width, 0, wall_color, thickness=2)
+        self._draw_thick_line(0, self.height - 1, self.width, self.height - 1,
+                              wall_color, thickness=2)
+        self._draw_thick_line(0, 0, 0, self.height, wall_color, thickness=2)
+        self._draw_thick_line(self.width - 1, 0, self.width - 1, self.height,
+                              wall_color, thickness=2)
 
     def _draw_info(self) -> None:
         """Display information at the bottom of the window."""
@@ -272,13 +348,22 @@ class MlxDisplay:
         # Escape (65307) or Q (113)
         if keycode == 65307 or keycode == 113:
             self._quit()
-        # R (114 or 82)
+        # R (114 or 82) - Regenerate
         elif keycode == 114 or keycode == 82:
             self._regenerate()
-        # P (112 or 80)
+        # P (112 or 80) - Toggle path with step-by-step animation
         elif keycode == 112 or keycode == 80:
-            self.show_path = not self.show_path
-        # C (99 or 67)
+            if self.show_path:
+                # If path is already shown, hide it
+                self.show_path = False
+                self._animating = False
+            else:
+                # Start progressive animation from beginning
+                self._animating = True
+                self._path_progress = 0
+                self._frame_counter = 0
+                self.show_path = True
+        # C (99 or 67) - Change wall color
         elif keycode == 99 or keycode == 67:
             self._change_wall_color()
 
@@ -308,10 +393,16 @@ class MlxDisplay:
 
         self.maze = new_maze
         self._update_path()
+        # Reset animation state
+        self._animating = False
+        self._path_progress = 0
+        self._frame_counter = 0
+        self.show_path = False  # Path is hidden by default
 
     def _change_wall_color(self) -> None:
         """Change wall colors randomly."""
         self._wall_color = 0xFF000000 | random.randint(0, 0xFFFFFF)
+        self.COLORS['pattern42'] = self._wall_color
 
     # ==========================================================
     #  RUN & CLEANUP
