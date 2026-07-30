@@ -115,11 +115,7 @@ def parse_config(path: str) -> dict[str, Any]:
     # unknown name is instead rejected by solve() when actually used.
     algorithm = raw.get("ALGORITHM", "bfs").strip().lower() or "bfs"
 
-    try:
-        _validate_bounds(width, height, entry, exit_)
-    except ConfigError as exc:
-        print(f"Config validation error: {exc}  ")
-        exit(1)
+    _validate_bounds(width, height, entry, exit_)
 
     res: dict[str, Any] = {
         "width": width,
