@@ -73,6 +73,14 @@ class MazeGenerator:
             [ALL_WALLS for _ in range(self.width)]
             for _ in range(self.height)
         ]
+        # Ordered history of walls removed by the DFS carving step only
+        # (braiding is intentionally NOT recorded: the animation is meant
+        # to show the recursive-backtracker exploration, not the
+        # post-processing loops). Each entry is (x, y, nx, ny, direction),
+        # matching the signature of _remove_wall, so the display layer can
+        # replay them one by one on a fresh ALL_WALLS grid.
+        self.steps: list[tuple[int, int, int, int, int]] = []
+        self._recording: bool = True
 
     def generate(self) -> None:
         """Generates the maze using DFS."""
@@ -101,9 +109,14 @@ class MazeGenerator:
         # 2. Launch DFS from entry (0,0)
         self._dfs(0, 0, visited)
 
-        # 3. If the maze must NOT be perfect, punch extra loops in it
+        # 3. If the maze must NOT be perfect, punch extra loops in it.
+        # Recording is turned off first: braided walls are not part of
+        # the DFS exploration and must not appear in the generation
+        # animation (see self.steps docstring in __init__).
         if not self.config.perfect:
+            self._recording = False
             self._braid()
+            self._recording = True
 
     def _can_place_42(self) -> bool:
         """
@@ -337,3 +350,6 @@ class MazeGenerator:
 
         # Open opposite wall on neighbor side
         self.grid[ny][nx] &= ~OPPOSITE[direction]
+
+        if self._recording:
+            self.steps.append((x, y, nx, ny, direction))
