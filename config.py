@@ -93,6 +93,12 @@ def parse_config(path: str) -> dict[str, Any]:
 
     width = _parse_positive_int(raw["WIDTH"], "WIDTH")
     height = _parse_positive_int(raw["HEIGHT"], "HEIGHT")
+    if width > 75:
+        raise ConfigError("Maximum width is 75.")
+
+    if height > 35:
+        raise ConfigError("Maximum height is 35.")
+
     entry = _parse_coordinates(raw["ENTRY"], "ENTRY")
     exit_ = _parse_coordinates(raw["EXIT"], "EXIT")
     output_file = raw["OUTPUT_FILE"]
@@ -115,7 +121,11 @@ def parse_config(path: str) -> dict[str, Any]:
     # unknown name is instead rejected by solve() when actually used.
     algorithm = raw.get("ALGORITHM", "bfs").strip().lower() or "bfs"
 
-    _validate_bounds(width, height, entry, exit_)
+    try:
+        _validate_bounds(width, height, entry, exit_)
+    except ConfigError as exc:
+        print(f"Config validation error: {exc}  ")
+        exit(1)
 
     res: dict[str, Any] = {
         "width": width,
