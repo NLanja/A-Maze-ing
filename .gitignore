@@ -7,4 +7,4 @@ __pycache__/
 .venv/
 
 # Generated files
-output_maze.txt
+maze.txt
