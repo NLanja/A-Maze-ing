@@ -80,7 +80,7 @@ class MazeGenerator:
         # matching the signature of _remove_wall, so the display layer can
         # replay them one by one on a fresh ALL_WALLS grid.
         self.steps: list[tuple[int, int, int, int, int]] = []
-        self._recording: bool = True
+        self._recording = True
 
     def generate(self) -> None:
         """Generates the maze using DFS."""
