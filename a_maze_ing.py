@@ -11,10 +11,9 @@ Usage:
 
 import sys
 from typing import NoReturn
-
 from config import ConfigError, MazeConfig
-from mazegen.generator import MazeGenerator
-from mazegen.solver import solve
+from mazegen import MazeGenerator
+from solver import solve
 
 
 def error_exit(message: str) -> NoReturn:
@@ -71,7 +70,7 @@ def display_maze(maze: MazeGenerator, config: MazeConfig) -> None:
         config: the parsed configuration (for entry/exit coordinates).
     """
     try:
-        from mazegen.display import MlxDisplay
+        from display import MlxDisplay
     except ImportError as exc:
         print(f"Warning: display unavailable ({exc}). Maze file was saved.")
         return
@@ -86,6 +85,49 @@ def display_maze(maze: MazeGenerator, config: MazeConfig) -> None:
             f"Warning: could not open graphical display ({exc}). "
             "Maze file was still generated and saved."
         )
+
+
+def print_hex_maze(maze: MazeGenerator) -> None:
+    """Prints a maze in hexadecimal format, one row per line.
+
+    Args:
+        maze: the generated maze to print.
+    """
+    for row in maze.grid:
+        print("".join(f"{cell:X}" for cell in row))
+
+
+def save_in_output(config_path: str = "config.txt") -> None:
+    """Loads the config, generates the maze, solves it, and saves it.
+
+    Args:
+        config_path: path to the configuration file to use.
+    """
+    try:
+        config = MazeConfig(config_path)
+    except ConfigError as exc:
+        print(f"Error: {exc}")
+        return
+
+    maze = MazeGenerator(config)
+    maze.generate()
+
+    print(
+        f"entry={config.entry} exit={config.exit} "
+        f"perfect={config.perfect}"
+    )
+    print_hex_maze(maze)
+
+    path = solve(maze.grid, config.entry, config.exit)
+    if path is None:
+        print(
+            "Error: no path found between entry and exit "
+            "(maze is not connected)"
+        )
+        return
+    print("path:", "".join(path))
+
+    save_maze(maze, config.entry, config.exit, path, config.output_file)
 
 
 def main() -> None:
@@ -113,8 +155,8 @@ def main() -> None:
         )
 
     try:
-        path = solve(maze.grid, config.entry, config.exit, config.algorithm) 
-    except ValueError as  exc:
+        path = solve(maze.grid, config.entry, config.exit, config.algorithm)
+    except ValueError as exc:
         error_exit(str(exc))
     if path is None:
         error_exit("no path found between entry and exit (maze not connected)")
