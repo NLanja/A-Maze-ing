@@ -14,7 +14,7 @@ faster on large mazes, since moves have a uniform cost of 1.
 
 import heapq
 from collections import deque
-from typing import Callable, Optional
+from typing import Callable, Optional, Any
 
 from mazegen.generator import DIRECTION, EAST, NORTH, SOUTH, WEST
 
@@ -170,6 +170,93 @@ def solve(
             f"choose one of {list(ALGORITHMS)}"
         ) from exc
     return solver_fn(grid, entry, exit_)
+
+
+def solve_bfs_animated(
+    grid: list[list[int]],
+    entry: Coord,
+    exit_: Coord,
+) -> tuple[Optional[list[str]], list[dict[str, Any]]]:
+    """BFS solver that records each step for animation.
+
+    Records visited cells, frontier queue, and current cell at each step.
+
+    Args:
+        grid: maze grid, one wall-bitmask per cell (grid[y][x]).
+        entry: (x, y) starting coordinates.
+        exit_: (x, y) target coordinates.
+
+    Returns:
+        A tuple (path, steps) where:
+            - path: list of moves or None if no path
+            - steps: list of dicts with keys:
+                'visited': set of visited cells
+                'frontier': deque of cells in queue
+                'current': current cell being explored
+                'path': current path to current cell
+                'type': 'init', 'explore', 'discover', or 'found'
+    """
+    height = len(grid)
+    width = len(grid[0]) if height else 0
+
+    visited: set[Coord] = {entry}
+    queue: deque[tuple[Coord, list[str]]] = deque()
+    queue.append((entry, []))
+    steps = []
+
+    # Initial state
+    steps.append({
+        'visited': set(visited),
+        'frontier': deque(queue),
+        'current': entry,
+        'path': [],
+        'type': 'init'
+    })
+
+    while queue:
+        (x, y), path = queue.popleft()
+
+        # Exploration state
+        steps.append({
+            'visited': set(visited),
+            'frontier': deque(queue),
+            'current': (x, y),
+            'path': path,
+            'type': 'explore'
+        })
+
+        if (x, y) == exit_:
+            steps.append({
+                'visited': set(visited),
+                'frontier': deque(queue),
+                'current': (x, y),
+                'path': path,
+                'type': 'found'
+            })
+            return path, steps
+
+        for direction, (dx, dy) in DIRECTION.items():
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < width and 0 <= ny < height):
+                continue
+            if (nx, ny) in visited:
+                continue
+            if grid[y][x] & direction:
+                continue
+            visited.add((nx, ny))
+            queue.append(((nx, ny), path + [DIRECTION_LETTER[direction]]))
+
+            # Discovery state
+            steps.append({
+                'visited': set(visited),
+                'frontier': deque(queue),
+                'current': (nx, ny),
+                'path': path + [DIRECTION_LETTER[direction]],
+                'type': 'discover',
+                'parent': (x, y)
+            })
+
+    return None, steps
 
 
 def load_hex_grid(path: str) -> list[list[int]]:
