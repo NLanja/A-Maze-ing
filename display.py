@@ -10,7 +10,7 @@ from typing import Tuple, Set, Optional, Dict, Any, List
 from collections import deque
 from mlx import Mlx
 from mazegen.generator import MazeGenerator, ALL_WALLS, EAST, SOUTH, OPPOSITE
-from solver import solve, solve_bfs_animated, Coord
+from solver import solve, solve_animated, Coord
 from a_maze_ing import save_in_output
 
 
@@ -156,7 +156,8 @@ class MlxDisplay:
         print("  [R] Re-generate a new maze")
         print("  [P] Show/Hide the solution path (step by step)")
         print("  [F] Stop aniamation maze")
-        print("  [B] BFS animation (auto-plays step by step)")
+        print("  [B] Solve animation (BFS or A*, per ALGORITHM in config; "
+              "auto-plays step by step)")
         print("  [D] Display solution instantly")
         print("  [C] Change wall colors")
         print("  [S] Save")
@@ -580,8 +581,9 @@ class MlxDisplay:
             text = f"Generating maze... {pct}%"
         elif self.bfs_mode and self.bfs_animator:
             progress = int(self.bfs_animator.get_progress() * 100)
-            status = "BFS" if not self.bfs_animator.is_finished() else "DONE"
-            text = (f"BFS: {status} | Progress: {progress}% | "
+            algo_name = self.bfs_animator.algorithm.upper()
+            status = algo_name if not self.bfs_animator.is_finished() else "DONE"
+            text = (f"{algo_name}: {status} | Progress: {progress}% | "
                     f"Size: {self.maze.width}x{self.maze.height}")
         else:
             text = (f"Size: {self.maze.width}x{self.maze.height} | "
@@ -598,49 +600,54 @@ class MlxDisplay:
 
     def _on_key(self, keycode: int, data: Any) -> None:
         """Handle keyboard events."""
-        # Escape (65307) or Q (113)
-        if keycode == 65307 or keycode == 113:
+
+        # ESC / Q - Quit
+        if keycode in (65307, 113):
             self._quit()
-        # R (114 or 82) - Regenerate
-        elif keycode == 114 or keycode == 82:
+
+        # R - Regenerate
+        elif keycode in (114, 82):
             self._regenerate()
-        # F (102 or 70) - Finish maze generation
-        elif keycode == 102 or keycode == 70:
+
+        # F - Finish generation
+        elif keycode in (102, 70):
             self._skip_generation_animation()
-        # P (112 or 80) - Toggle path with step-by-step animation
-        elif keycode == 112 or keycode == 80:
+
+        # P - Toggle path animation
+        elif keycode in (112, 80):
             if self.show_path:
-                # If path is already shown, hide it
                 self.show_path = False
                 self._animating = False
             else:
-                # Show the finished maze right away instead of making
-                # the user wait out the DFS reveal first.
                 self._skip_generation_animation()
-                # Start progressive animation from beginning
                 self._animating = True
                 self._path_progress = 0
                 self._frame_counter = 0
                 self.show_path = True
-        # D (100 or 68) - Display solution instantly
+
+        # D - Stop BFS and show solution
         elif keycode in (100, 68):
-            self._skip_generation_animation()
             self._show_solution()
-        # B (98 or 66) - BFS animation
-        elif keycode == 98 or keycode == 66:
-            # Same reasoning as [P]: BFS needs the finished maze, not
-            # the in-progress reveal, so jump straight to "done" first.
+
+        # B - Start BFS animation
+        elif keycode in (98, 66):
             self._skip_generation_animation()
             self._start_bfs_animation()
-        # C (99 or 67) - Change wall color
-        elif keycode == 99 or keycode == 67:
+
+        # C - Change wall color
+        elif keycode in (99, 67):
             self._change_wall_color()
-        # G (103 or 71) - Replay the generation animation
-        elif keycode == 103 or keycode == 71:
+
+        # G - Replay generation
+        elif keycode in (103, 71):
             self._start_generation_animation()
-        #S Save in output_file
+
+        # S - Save
         elif keycode == 83:
             self._save_output_file()
+        
+        elif keycode in (103, 71):
+            self._start_generation_animation()
 
     def _on_close(self, data: Any) -> None:
         """Handle window close button."""
@@ -686,16 +693,25 @@ class MlxDisplay:
         self.COLORS['pattern42'] = self._wall_color
 
     def _start_bfs_animation(self) -> None:
-        """Start BFS animation in auto-play mode."""
+        """Start the solve animation in auto-play mode.
+
+        Uses whichever algorithm is configured (config.algorithm, i.e.
+        ALGORITHM in config.txt) via solve_animated, instead of always
+        forcing BFS: BFSAnimator (despite its name, kept for backward
+        compatibility) now drives either BFS or A* through the same
+        steps/frontier/visited system and the same MLX rendering code.
+        """
+        algorithm = getattr(self.maze.config, "algorithm", "bfs")
         self.bfs_animator = BFSAnimator(
             self.maze.grid,
-            self.entry, self.exit_pos)
+            self.entry, self.exit_pos,
+            algorithm=algorithm)
         self.bfs_animator.solve()
         self.bfs_animator.current_step = 0
         self.bfs_mode = True
         self.bfs_frame_counter = 0
         self.bfs_complete_counter = 0
-        print("BFS Animation started! Playing step by step...")
+        print(f"{algorithm.upper()} animation started! Playing step by step...")
 
     def _bfs_next_step(self) -> None:
         """Advance BFS animation by one step."""
@@ -709,9 +725,18 @@ class MlxDisplay:
     def _save_output_file(self) -> None:
         save_in_output()
     
-    def _show_solution(self):
+    def _show_solution(self) -> None:
         """Display the complete solution instantly."""
+
         self._skip_generation_animation()
+
+        # Stop BFS
+        self.bfs_mode = False
+        self.bfs_animator = None
+        self.bfs_frame_counter = 0
+        self.bfs_complete_counter = 0
+
+        # Show solution
         self.show_path = True
         self._animating = False
          
@@ -735,9 +760,14 @@ class MlxDisplay:
 
 
 class BFSAnimator:
-    """Animate BFS algorithm step by step.
+    """Animate a shortest-path algorithm step by step.
 
-    Stores all steps from solve_bfs_animated and provides navigation.
+    Despite the name (kept so existing references/keys elsewhere don't
+    break), this now drives whichever algorithm is requested (BFS or
+    A*) through the shared `solve_animated` entry point in solver.py.
+    Both algorithms record steps using the same schema ('visited',
+    'frontier', 'current', 'path', 'type'), so this class and the
+    `_draw_bfs_step` rendering in MlxDisplay work unchanged for either.
     """
 
     # Animation colors (0xAARRGGBB format)
@@ -753,26 +783,30 @@ class BFSAnimator:
         'floor': 0xFF000000,          # Black
     }
 
-    def __init__(self, grid: list[list[int]], entry: Coord, exit_: Coord):
+    def __init__(self, grid: list[list[int]], entry: Coord, exit_: Coord,
+                 algorithm: str = "bfs"):
         """Initialize animator with maze data.
 
         Args:
             grid: maze grid with wall bitmasks
             entry: (x, y) starting coordinates
             exit_: (x, y) target coordinates
+            algorithm: name of the algorithm to run ("bfs" or "astar"),
+                normally taken from config.algorithm.
         """
         self.grid = grid
         self.entry = entry
         self.exit = exit_
+        self.algorithm = algorithm
         self.steps: list[dict[str, Any]] = []
         self.current_step: int = 0
         self.path: Optional[list[str]] = None
         self.is_animating: bool = False
 
     def solve(self) -> None:
-        """Run BFS and store all animation steps."""
-        self.path, self.steps = solve_bfs_animated(
-            self.grid, self.entry, self.exit)
+        """Run the configured algorithm and store all animation steps."""
+        self.path, self.steps = solve_animated(
+            self.grid, self.entry, self.exit, self.algorithm)
         self.current_step = 0
 
     def get_state(self, step_index: int) -> dict[str, Any]:
