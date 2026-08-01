@@ -33,6 +33,9 @@ class MlxDisplay:
         'path': 0xFF888888,      # Path - MEDIUM GRAY
         'pattern42': 0xFFFFFFFF,  # 42 pattern - WHITE
         'gen_current': 0xFFF1C40F,  # DFS frontier cell - YELLOW
+        'visited': 0xFF16213e,
+        'frontier': 0xFF0f3460,
+        'current': 0xFFe94560,
     }
     # Wall color (changeable via 'C' key)
     _wall_color: int = COLORS['wall']
@@ -526,7 +529,7 @@ class MlxDisplay:
             state: Dict with 'visited', 'frontier', 'current', 'path' keys
         """
         grid = self.maze.grid
-        colors = BFSAnimator.ANIM_COLORS
+        colors = self.COLORS
 
         visited = state.get('visited', set())
         frontier = state.get('frontier', deque())
@@ -715,9 +718,15 @@ class MlxDisplay:
         self.bfs_final_state = None
 
     def _change_wall_color(self) -> None:
-        """Change wall colors randomly."""
+        """Change wall + related colors randomly, in sync everywhere."""
         self._wall_color = 0xFF000000 | random.randint(0, 0xFFFFFF)
+        self.COLORS['wall'] = self._wall_color
         self.COLORS['pattern42'] = self._wall_color
+
+        # Optionnel : faire varier aussi le fond, le chemin et la frontière
+        # self.COLORS['floor'] = 0xFF000000 | random.randint(0, 0xFFFFFF)
+        # self.COLORS['path'] = 0xFF000000 | random.randint(0, 0xFFFFFF)
+        # self.COLORS['frontier'] = 0xFF000000 | random.randint(0, 0xFFFFFF)
 
     def _start_bfs_animation(self) -> None:
         """Start the solve animation."""
@@ -800,19 +809,6 @@ class BFSAnimator:
     'frontier', 'current', 'path', 'type'), so this class and the
     `_draw_bfs_step` rendering in MlxDisplay work unchanged for either.
     """
-
-    # Animation colors (0xAARRGGBB format)
-    ANIM_COLORS = {
-        'unvisited': 0xFF1a1a2e,      # Dark background
-        'visited': 0xFF16213e,        # Dark blue
-        'frontier': 0xFF0f3460,       # Blue
-        'current': 0xFFe94560,        # Red
-        'path': 0xFF888888,           # Yellow
-        'entry': 0xFF2ECC71,          # Green
-        'exit': 0xFFE74C3C,           # Red
-        'wall': 0xFFFFFFFF,           # White
-        'floor': 0xFF000000,          # Black
-    }
 
     def __init__(self, grid: list[list[int]], entry: Coord, exit_: Coord,
                  algorithm: str = "bfs"):
