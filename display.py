@@ -109,6 +109,9 @@ class MlxDisplay:
         self.bfs_complete_counter: int = 0
         self.bfs_show_duration: int = 30
 
+        # Keep the final BFS state visible
+        self.bfs_final_state: Optional[dict[str, Any]] = None
+
         # Solve the path using the solver
         self._path_coords: Set[Tuple[int, int]] = set()
         self._path_directions: List[str] = []
@@ -354,27 +357,50 @@ class MlxDisplay:
                         self._animating = False  # Animation complete
 
             # BFS auto-play animation
-            if self.bfs_mode and self.bfs_animator:
-                if not self.bfs_animator.is_finished():
-                    self.bfs_frame_counter += 1
-                    if self.bfs_frame_counter >= self.bfs_speed:
-                        self.bfs_frame_counter = 0
-                        self.bfs_animator.next_step()
-                else:
-                    self.bfs_complete_counter += 1
-                    if self.bfs_complete_counter >= self.bfs_show_duration:
-                        self.bfs_mode = False
-                        self.bfs_animator = None
-                        self.bfs_complete_counter = 0
+            # BFS auto-play animation
+        if self.bfs_mode and self.bfs_animator:
+
+            if not self.bfs_animator.is_finished():
+
+                self.bfs_frame_counter += 1
+
+                if self.bfs_frame_counter >= self.bfs_speed:
+                    self.bfs_frame_counter = 0
+                    self.bfs_animator.next_step()
+
+            else:
+                # Keep the last animation state forever
+                self.bfs_final_state = self.bfs_animator.get_state(
+                    self.bfs_animator.current_step
+                )
+
+                self.bfs_mode = False
+                self.bfs_animator = None        
 
         self._clear()
 
         generating = self._gen_animating or self._gen_progress < len(
             self._gen_steps)
-        if not generating and self.bfs_mode and self.bfs_animator:
-            state = self.bfs_animator.get_state(self.bfs_animator.current_step)
-            self._draw_bfs_step(state)
+        if not generating:
+
+            if self.bfs_mode and self.bfs_animator:
+
+                state = self.bfs_animator.get_state(
+                    self.bfs_animator.current_step
+                )
+
+                self._draw_bfs_step(state)
+
+            elif self.bfs_final_state:
+
+                self._draw_bfs_step(self.bfs_final_state)
+
+            else:
+
+                self._draw_maze()
+
         else:
+
             self._draw_maze()
 
         self._flush()
@@ -686,6 +712,7 @@ class MlxDisplay:
         self.bfs_animator = None
         self.bfs_frame_counter = 0
         self.bfs_complete_counter = 0
+        self.bfs_final_state = None
 
     def _change_wall_color(self) -> None:
         """Change wall colors randomly."""
@@ -693,25 +720,28 @@ class MlxDisplay:
         self.COLORS['pattern42'] = self._wall_color
 
     def _start_bfs_animation(self) -> None:
-        """Start the solve animation in auto-play mode.
+        """Start the solve animation."""
 
-        Uses whichever algorithm is configured (config.algorithm, i.e.
-        ALGORITHM in config.txt) via solve_animated, instead of always
-        forcing BFS: BFSAnimator (despite its name, kept for backward
-        compatibility) now drives either BFS or A* through the same
-        steps/frontier/visited system and the same MLX rendering code.
-        """
         algorithm = getattr(self.maze.config, "algorithm", "bfs")
+
         self.bfs_animator = BFSAnimator(
             self.maze.grid,
-            self.entry, self.exit_pos,
-            algorithm=algorithm)
+            self.entry,
+            self.exit_pos,
+            algorithm=algorithm,
+        )
+
         self.bfs_animator.solve()
         self.bfs_animator.current_step = 0
+
         self.bfs_mode = True
         self.bfs_frame_counter = 0
         self.bfs_complete_counter = 0
-        print(f"{algorithm.upper()} animation started! Playing step by step...")
+
+        # Reset previous result
+        self.bfs_final_state = None
+
+        print(f"{algorithm.upper()} animation started!")
 
     def _bfs_next_step(self) -> None:
         """Advance BFS animation by one step."""
@@ -733,6 +763,7 @@ class MlxDisplay:
         # Stop BFS
         self.bfs_mode = False
         self.bfs_animator = None
+        self.bfs_final_state = None
         self.bfs_frame_counter = 0
         self.bfs_complete_counter = 0
 
