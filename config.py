@@ -12,7 +12,7 @@ class ConfigError(Exception):
     """Raised when the configuration file is missing, malformed or invalid."""
 
 
-REQUIRED_KEYS = {"WIDTH", "HEIGHT", "ENTRY", "EXIT", "OUTPUT_FILE", "PERFECT"}
+REQUIRED_KEYS = {"WIDTH", "HEIGHT", "ENTRY", "EXIT"}
 
 
 @dataclass
@@ -79,7 +79,7 @@ def parse_config(path: str) -> dict[str, Any]:
                 f"invalid syntax (expected KEY=VALUE): '{line}'"
             )
         key, _, value = line.partition("=")
-        key = key.strip().upper()  # Normalize to uppercase (case-insensitive)
+        key = key.strip().upper()
         value = value.strip()
         if not key:
             raise ConfigError(f"{path}:{line_no}: empty key")
@@ -101,10 +101,10 @@ def parse_config(path: str) -> dict[str, Any]:
 
     entry = _parse_coordinates(raw["ENTRY"], "ENTRY")
     exit_ = _parse_coordinates(raw["EXIT"], "EXIT")
-    output_file = raw["OUTPUT_FILE"]
+    output_file = raw.get("OUTPUT_FILE", "maze.txt").strip()
     if not output_file:
-        raise ConfigError("OUTPUT_FILE cannot be empty")
-    perfect = _parse_bool(raw["PERFECT"], "PERFECT")
+        output_file = "maze.txt"
+    perfect = _parse_bool(raw.get("PERFECT", "True"), "PERFECT")
 
     seed: Optional[int] = None
     if raw.get("SEED", ""):
@@ -115,10 +115,6 @@ def parse_config(path: str) -> dict[str, Any]:
                 f"SEED must be an integer, got '{raw['SEED']}'"
             ) from exc
 
-    # Optional: which shortest-path algorithm to use ("bfs" or
-    # "astar"). Not validated against mazegen.solver.ALGORITHMS here
-    # to avoid a circular import (see MazeConfig docstring); an
-    # unknown name is instead rejected by solve() when actually used.
     algorithm = raw.get("ALGORITHM", "bfs").strip().lower() or "bfs"
 
     try:
@@ -141,7 +137,20 @@ def parse_config(path: str) -> dict[str, Any]:
 
 
 def _parse_positive_int(value: str, key: str) -> int:
-    """Parses a strictly positive integer value."""
+    """Parse a string into a strictly positive integer.
+
+    Args:
+        value: The string value to parse.
+        key: The configuration key associated with the value. Used in
+            error messages.
+
+    Returns:
+        The parsed strictly positive integer.
+
+    Raises:
+        ConfigError: If ``value`` cannot be converted to an integer or if
+            the parsed integer is less than or equal to zero.
+    """
     try:
         parsed = int(value)
     except ValueError as exc:
@@ -152,7 +161,24 @@ def _parse_positive_int(value: str, key: str) -> int:
 
 
 def _parse_coordinates(value: str, key: str) -> tuple[int, int]:
-    """Parses an 'x,y' coordinate pair."""
+    """Parse a string into a pair of non-negative coordinates.
+
+    The expected format is ``"x,y"``, where both ``x`` and ``y`` are
+    non-negative integers.
+
+    Args:
+        value: The coordinate string to parse.
+        key: The configuration key associated with the value. Used in
+            error messages.
+
+    Returns:
+        A tuple ``(x, y)`` containing the parsed coordinates.
+
+    Raises:
+        ConfigError: If ``value`` is not in the expected ``"x,y"`` format,
+            if either coordinate is not an integer, or if either coordinate
+            is negative.
+    """
     parts = value.split(",")
     if len(parts) != 2:
         raise ConfigError(f"{key} must be in 'x,y' format, got '{value}'")
@@ -169,7 +195,24 @@ def _parse_coordinates(value: str, key: str) -> tuple[int, int]:
 
 
 def _parse_bool(value: str, key: str) -> bool:
-    """Parses a boolean-like value (True/False, 1/0, yes/no)."""
+    """Parse a string into a boolean value.
+
+    Accepted truthy values are ``"true"``, ``"1"``, and ``"yes"``.
+    Accepted falsy values are ``"false"``, ``"0"``, and ``"no"``.
+    Matching is case-insensitive and ignores leading/trailing whitespace.
+
+    Args:
+        value: The string value to parse.
+        key: The configuration key associated with the value. Used in
+            error messages.
+
+    Returns:
+        The parsed boolean value.
+
+    Raises:
+        ConfigError: If ``value`` does not represent a supported boolean
+            value.
+    """
     normalized = value.strip().lower()
     if normalized in ("true", "1", "yes"):
         return True
@@ -184,7 +227,21 @@ def _validate_bounds(
     entry: tuple[int, int],
     exit_: tuple[int, int],
 ) -> None:
-    """Ensures entry/exit are inside the grid and distinct."""
+    """Validate that the entry and exit coordinates are within the grid.
+
+    Ensures that both the entry and exit coordinates lie inside the maze
+    boundaries and that they do not refer to the same cell.
+
+    Args:
+        width: The width of the maze.
+        height: The height of the maze.
+        entry: The entry cell coordinates as ``(x, y)``.
+        exit_: The exit cell coordinates as ``(x, y)``.
+
+    Raises:
+        ConfigError: If either coordinate lies outside the maze bounds or
+            if the entry and exit coordinates are identical.
+    """
     for name, (x, y) in (("ENTRY", entry), ("EXIT", exit_)):
         if x >= width or y >= height:
             raise ConfigError(
