@@ -1,7 +1,7 @@
 """MLX display test."""
 
 from mazegen.generator import MazeGenerator
-from mazegen.display import MlxDisplay
+from display import MlxDisplay
 from config import MazeConfig
 
 
