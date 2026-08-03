@@ -77,7 +77,11 @@ def display_maze(maze: MazeGenerator, config: MazeConfig) -> None:
 
     try:
         display = MlxDisplay(
-            maze, cell_size=25, entry=config.entry, exit_pos=config.exit
+            maze,
+            cell_size=25,
+            entry=config.entry,
+            exit_pos=config.exit,
+            output_file=config.output_file,
         )
         display.run()
     except Exception as exc:
@@ -97,41 +101,12 @@ def print_hex_maze(maze: MazeGenerator) -> None:
         print("".join(f"{cell:X}" for cell in row))
 
 
-def save_in_output(config_path: str = "config.txt") -> None:
-    """Loads the config, generates the maze, solves it, and saves it.
-
-    Args:
-        config_path: path to the configuration file to use.
-    """
-    try:
-        config = MazeConfig(config_path)
-    except ConfigError as exc:
-        print(f"Error: {exc}")
-        return
-
-    maze = MazeGenerator(config)
-    maze.generate()
-
-    print(
-        f"entry={config.entry} exit={config.exit} "
-        f"perfect={config.perfect}"
-    )
-    print_hex_maze(maze)
-
-    path = solve(maze.grid, config.entry, config.exit)
-    if path is None:
-        print(
-            "Error: no path found between entry and exit "
-            "(maze is not connected)"
-        )
-        return
-    print("path:", "".join(path))
-
-    save_maze(maze, config.entry, config.exit, path, config.output_file)
-
-
 def main() -> None:
-    """Entry point: parse config, generate/solve maze, write & display it."""
+    """Generate, solve, and display a maze from a configuration file.
+
+    Exits with an error message if the configuration is invalid, maze
+    generation fails, or no solution path exists.
+    """
     if len(sys.argv) != 2:
         error_exit(f"usage: python3 {sys.argv[0]} <config_file>")
 
@@ -161,12 +136,6 @@ def main() -> None:
     if path is None:
         error_exit("no path found between entry and exit (maze not connected)")
 
-    try:
-        save_maze(maze, config.entry, config.exit, path, config.output_file)
-    except OSError as exc:
-        error_exit(f"cannot write output file '{config.output_file}': {exc}")
-
-    print(f"Maze written to '{config.output_file}'.")
     print(f"Shortest path ({len(path)} steps): {''.join(path)}")
 
     display_maze(maze, config)
