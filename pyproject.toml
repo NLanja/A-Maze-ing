@@ -7,8 +7,8 @@ name = "mazegen"
 version = "1.0"
 description = "Maze generation"
 authors = [
-  { name="lanasain", email="lanasain@student.42antananarivo.mg" }
-  { name="njrafano", email="njrafano@student.42antananarivo.mg" }
+  { name="lanasain", email="lanasain@student.42antananarivo.mg" },
+  { name="njrafano", email="njrafano@student.42antananarivo.mg" },
 ]
 
 [tool.setuptools]
