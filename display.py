@@ -11,7 +11,7 @@ from collections import deque
 from mlx import Mlx
 from mazegen.generator import MazeGenerator, ALL_WALLS, EAST, SOUTH, OPPOSITE
 from solver import solve, solve_animated, Coord
-from a_maze_ing import save_in_output
+from a_maze_ing import save_maze
 
 
 class MlxDisplay:
@@ -24,15 +24,14 @@ class MlxDisplay:
         - Change wall colors (C)
     """
 
-    # Default colors (0xAARRGGBB format)
     COLORS: Dict[str, int] = {
-        'wall': 0xFFFFFFFF,      # Walls - WHITE
-        'floor': 0xFF000000,     # Floor - BLACK
-        'entry': 0xFF2ECC71,     # Entry - GREEN (keep visible)
-        'exit': 0xFFE74C3C,      # Exit - RED (keep visible)
-        'path': 0xFF888888,      # Path - MEDIUM GRAY
-        'pattern42': 0xFFFFFFFF,  # 42 pattern - WHITE
-        'gen_current': 0xFFF1C40F,  # DFS frontier cell - YELLOW
+        'wall': 0xFFFFFFFF,
+        'floor': 0xFF000000,
+        'entry': 0xFF2ECC71,     
+        'exit': 0xFFE74C3C,      
+        'path': 0xFF888888,      
+        'pattern42': 0xFFFFFFFF,  
+        'gen_current': 0xFFF1C40F,  
         'visited': 0xFF16213e,
         'frontier': 0xFF0f3460,
         'current': 0xFFe94560,
@@ -42,7 +41,8 @@ class MlxDisplay:
 
     def __init__(self, maze: MazeGenerator, cell_size: int = 30,
                  entry: Tuple[int, int] = (0, 0),
-                 exit_pos: Optional[Tuple[int, int]] = None):
+                 exit_pos: Optional[Tuple[int, int]] = None,
+                 output_file: str = "output.txt"):
         """
         Initialize the MLX window.
 
@@ -61,6 +61,7 @@ class MlxDisplay:
 
         # Store entry and exit
         self.entry = entry
+        self.output_file = output_file
         if exit_pos is None:
             self.exit_pos = (maze.width - 1, maze.height - 1)
         else:
@@ -73,38 +74,15 @@ class MlxDisplay:
         self._frame_counter: int = 0
         self._animation_speed: int = 1
         self._path_dir_map: Dict[Tuple[int, int], str] = {}
-
-        # --- Generation (DFS carving) animation attributes ---
-        # Replays maze.steps on a blank ALL_WALLS grid, one (or a few)
-        # wall(s) per frame, so the recursive-backtracker exploration is
-        # visible live (cf. professor-l.github.io/mazes/ style replay).
         self._gen_steps: List[Tuple[int, int, int, int, int]] = []
         self._gen_grid: List[List[int]] = []
         self._gen_progress: int = 0
         self._gen_animating: bool = False
-        # Real-time pacing (NOT a per-hook-call counter): mlx_loop_hook
-        # can fire an unpredictable, possibly very large, number of times
-        # before the window is actually mapped/visible on screen (e.g.
-        # while the window manager is still setting it up right after
-        # startup). Counting hook calls would let the whole animation
-        # silently run to completion during that invisible burst, so the
-        # user would only ever see the finished maze on first launch.
-        # Pacing off wall-clock time instead guarantees a visible
-        # animation regardless of how fast/slow _render() gets called.
-        # NOTE: the actual rate is recomputed per-maze in
-        # _start_generation_animation() so the reveal always takes about
-        # the same amount of real time (a fixed rate here meant a 25x20
-        # maze, ~479 steps, took ~96s to reveal - long enough that [B]
-        # looked "broken" because BFS stayed hidden behind it that whole
-        # time). This default is only used before the first maze loads.
         self._gen_steps_per_sec: float = 5
-        # Target wall-clock duration for the DFS reveal, regardless of
-        # maze size (see _start_generation_animation).
         self._gen_target_duration: float = 15
         self._gen_start_time: float = 0.0
         self._gen_current: Optional[Tuple[int, int]] = None
 
-        # --- BFS animation attributes ---
         self.bfs_mode: bool = False
         self.bfs_animator: Optional['BFSAnimator'] = None
         self.bfs_frame_counter: int = 0
@@ -112,25 +90,20 @@ class MlxDisplay:
         self.bfs_complete_counter: int = 0
         self.bfs_show_duration: int = 30
 
-        # Keep the final BFS state visible
         self.bfs_final_state: Optional[dict[str, Any]] = None
 
-        # Solve the path using the solver
         self._path_coords: Set[Tuple[int, int]] = set()
         self._path_directions: List[str] = []
         self._solve_path()
 
-        # Window dimensions (padding + space for info)
         self.width = maze.width * cell_size + 2
         self.height = maze.height * cell_size + 2
 
-        # --- 1. Initialize MLX ---
         self.mlx = Mlx()
         self.mlx_ptr = self.mlx.mlx_init()
         if not self.mlx_ptr:
             raise RuntimeError("mlx_init() failed")
 
-        # --- 2. Create the window ---
         self.win = self.mlx.mlx_new_window(
             self.mlx_ptr,
             self.width,
@@ -150,12 +123,6 @@ class MlxDisplay:
         self.mlx.mlx_key_hook(self.win, self._on_key, None)
         self.mlx.mlx_hook(self.win, 33, 0, self._on_close, None)
         self.mlx.mlx_loop_hook(self.mlx_ptr, self._render, None)
-
-        # Start with the DFS carving animation instead of the finished
-        # maze, so the exploration is visible on first launch. The BFS
-        # animation is NOT auto-started here: the two animations must
-        # never race for the same frames, so BFS only starts once the
-        # maze is fully carved (press [B]).
         self._start_generation_animation()
 
         print("MLX Commands:")
@@ -187,9 +154,6 @@ class MlxDisplay:
         self._gen_current = self.entry
         self._gen_animating = bool(self._gen_steps)
 
-        # Scale the reveal speed to the step count so a big maze doesn't
-        # take minutes to finish (clamped so tiny mazes don't just flash
-        # by, and huge mazes don't turn into a strobe effect).
         if self._gen_steps:
             ideal = len(self._gen_steps) / self._gen_target_duration
             self._gen_steps_per_sec = max(5.0, min(200.0, ideal))
@@ -630,19 +594,15 @@ class MlxDisplay:
     def _on_key(self, keycode: int, data: Any) -> None:
         """Handle keyboard events."""
 
-        # ESC / Q - Quit
         if keycode in (65307, 113):
             self._quit()
 
-        # R - Regenerate
         elif keycode in (114, 82):
             self._regenerate()
 
-        # F - Finish generation
         elif keycode in (102, 70):
             self._skip_generation_animation()
 
-        # P - Toggle path animation
         elif keycode in (112, 80):
             if self.show_path:
                 self.show_path = False
@@ -654,25 +614,21 @@ class MlxDisplay:
                 self._frame_counter = 0
                 self.show_path = True
 
-        # D - Stop BFS and show solution
         elif keycode in (100, 68):
             self._show_solution()
-
-        # B - Start BFS animation
+    
         elif keycode in (98, 66):
             self._skip_generation_animation()
             self._start_bfs_animation()
 
-        # C - Change wall color
         elif keycode in (99, 67):
             self._change_wall_color()
-
-        # G - Replay generation
+    
         elif keycode in (103, 71):
             self._start_generation_animation()
 
-        # S - Save
-        elif keycode == 83:
+    
+        elif keycode in (115, 83):
             self._save_output_file()
         
         elif keycode in (103, 71):
@@ -723,11 +679,6 @@ class MlxDisplay:
         self.COLORS['wall'] = self._wall_color
         self.COLORS['pattern42'] = self._wall_color
 
-        # Optionnel : faire varier aussi le fond, le chemin et la frontière
-        # self.COLORS['floor'] = 0xFF000000 | random.randint(0, 0xFFFFFF)
-        # self.COLORS['path'] = 0xFF000000 | random.randint(0, 0xFFFFFF)
-        # self.COLORS['frontier'] = 0xFF000000 | random.randint(0, 0xFFFFFF)
-
     def _start_bfs_animation(self) -> None:
         """Start the solve animation."""
 
@@ -739,15 +690,11 @@ class MlxDisplay:
             self.exit_pos,
             algorithm=algorithm,
         )
-
         self.bfs_animator.solve()
         self.bfs_animator.current_step = 0
-
         self.bfs_mode = True
         self.bfs_frame_counter = 0
         self.bfs_complete_counter = 0
-
-        # Reset previous result
         self.bfs_final_state = None
 
         print(f"{algorithm.upper()} animation started!")
@@ -762,21 +709,26 @@ class MlxDisplay:
                     print("BFS complete! No path found")
     
     def _save_output_file(self) -> None:
-        save_in_output()
+        """Save maze when S key is pressed."""
+
+        save_maze(
+            self.maze,
+            self.entry,
+            self.exit_pos,
+            self._path_directions,
+            self.output_file,
+        )
+
+        print(f"Maze saved to '{self.output_file}'.")
     
     def _show_solution(self) -> None:
         """Display the complete solution instantly."""
-
         self._skip_generation_animation()
-
-        # Stop BFS
         self.bfs_mode = False
         self.bfs_animator = None
         self.bfs_final_state = None
         self.bfs_frame_counter = 0
         self.bfs_complete_counter = 0
-
-        # Show solution
         self.show_path = True
         self._animating = False
          
