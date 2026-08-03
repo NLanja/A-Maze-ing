@@ -4,7 +4,6 @@ Reads a KEY=VALUE configuration file describing maze generation
 parameters, validates it, and exposes the result as a MazeConfig object.
 """
 
-from dataclasses import dataclass
 from typing import Optional, Any
 
 
@@ -15,7 +14,6 @@ class ConfigError(Exception):
 REQUIRED_KEYS = {"WIDTH", "HEIGHT", "ENTRY", "EXIT"}
 
 
-@dataclass
 class MazeConfig:
     """Holds validated maze generation parameters.
 
@@ -27,16 +25,12 @@ class MazeConfig:
         output_file: path of the file where the maze will be written.
         perfect: whether the maze must be a perfect maze.
         seed: optional RNG seed for reproducibility.
-        algorithm: optional solving algorithm name ("bfs" by default).
-            Not validated here on purpose (see note in parse_config)
-            to avoid a circular import with mazegen.solver, which
-            itself imports mazegen.generator, which imports this
-            module. Unknown names are rejected later by
-            mazegen.solver.solve(), which raises ValueError.
+        algorithm: Optional solving algorithm name (defaults to "bfs"). Unknown
+                    values are validated later by `mazegen.solver.solve()`.
     """
 
     def __init__(self, path: str) -> None:
-        """Parses and validates a maze configuration file."""
+        """Parse and validates a maze configuration file."""
         config_dict = parse_config(path)
         self.width: int = config_dict["width"]
         self.height: int = config_dict["height"]
@@ -49,7 +43,7 @@ class MazeConfig:
 
 
 def parse_config(path: str) -> dict[str, Any]:
-    """Parses and validates a maze configuration file.
+    """Parse and validates a maze configuration file.
 
     Args:
         path: path to the configuration file.
@@ -81,8 +75,14 @@ def parse_config(path: str) -> dict[str, Any]:
         key, _, value = line.partition("=")
         key = key.strip().upper()
         value = value.strip()
+
         if not key:
             raise ConfigError(f"{path}:{line_no}: empty key")
+
+        if key in raw:
+            raise ConfigError(
+                f"{path}:{line_no}: duplicate key '{key}'"
+            )
         raw[key] = value
 
     missing = REQUIRED_KEYS - raw.keys()
@@ -197,28 +197,27 @@ def _parse_coordinates(value: str, key: str) -> tuple[int, int]:
 def _parse_bool(value: str, key: str) -> bool:
     """Parse a string into a boolean value.
 
-    Accepted truthy values are ``"true"``, ``"1"``, and ``"yes"``.
-    Accepted falsy values are ``"false"``, ``"0"``, and ``"no"``.
+    Only accepts ``"true"`` and ``"false"`` values.
     Matching is case-insensitive and ignores leading/trailing whitespace.
 
     Args:
         value: The string value to parse.
-        key: The configuration key associated with the value. Used in
-            error messages.
+        key: The configuration key associated with the value.
 
     Returns:
         The parsed boolean value.
 
     Raises:
-        ConfigError: If ``value`` does not represent a supported boolean
-            value.
+        ConfigError: If ``value`` is not ``"true"`` or ``"false"``.
     """
     normalized = value.strip().lower()
-    if normalized in ("true", "1", "yes"):
+
+    if normalized == "true":
         return True
-    if normalized in ("false", "0", "no"):
+    if normalized == "false":
         return False
-    raise ConfigError(f"{key} must be a boolean (True/False), got '{value}'")
+
+    raise ConfigError(f"{key} must be True or False, got '{value}'")
 
 
 def _validate_bounds(
