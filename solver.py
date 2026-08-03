@@ -297,7 +297,6 @@ def _exact_distances_to(
             queue.append((nx, ny))
     return dist
 
-
 def solve_astar_animated(
     grid: list[list[int]],
     entry: Coord,
@@ -345,7 +344,6 @@ def solve_astar_animated(
     """
     height = len(grid)
     width = len(grid[0]) if height else 0
-
     true_dist = _exact_distances_to(grid, exit_)
 
     def heuristic(cell: Coord) -> int:
@@ -418,7 +416,6 @@ def solve_astar_animated(
                     heap, (priority, new_cost, (nx, ny), new_path)
                 )
 
-                # Discovery state
                 steps.append({
                     'visited': set(closed),
                     'frontier': open_cells(),
