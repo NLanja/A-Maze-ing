@@ -6,16 +6,14 @@ writing a `solve_xxx(grid, entry, exit_)` function and registering it
 in ALGORITHMS, without touching the rest of the pipeline.
 
 BFS is guaranteed to find the *shortest* path in an unweighted graph
-such as a maze grid, which is what the output file format requires
-(subject IV.5: "the shortest valid path from entry to exit"). A* with
-a Manhattan-distance heuristic also finds the shortest path, usually
-faster on large mazes, since moves have a uniform cost of 1.
+such as a maze grid, which is what the output file format requires.
+A* witha Manhattan-distance heuristic also finds the shortest path,
+usually faster on large mazes, since moves have a uniform cost of 1.
 """
 
 import heapq
 from collections import deque
 from typing import Callable, Optional, Any
-
 from mazegen.generator import DIRECTION, EAST, NORTH, SOUTH, WEST
 
 DIRECTION_LETTER: dict[int, str] = {
@@ -34,7 +32,7 @@ def solve_bfs(
     entry: Coord,
     exit_: Coord,
 ) -> Optional[list[str]]:
-    """Finds the shortest path between entry and exit using BFS.
+    """Find the shortest path between entry and exit using BFS.
 
     Args:
         grid: maze grid, one wall-bitmask per cell (grid[y][x]),
@@ -68,7 +66,7 @@ def solve_bfs(
             if (nx, ny) in visited:
                 continue
             if grid[y][x] & direction:
-                continue  # wall closed on this side, can't pass
+                continue
             visited.add((nx, ny))
             queue.append(((nx, ny), path + [DIRECTION_LETTER[direction]]))
 
@@ -80,7 +78,7 @@ def solve_astar(
     entry: Coord,
     exit_: Coord,
 ) -> Optional[list[str]]:
-    """Finds the shortest path between entry and exit using A*.
+    """Find the shortest path between entry and exit using A*.
 
     Uses the Manhattan distance to `exit_` as heuristic, which is
     admissible here since every move costs exactly 1 and only 4
@@ -103,7 +101,6 @@ def solve_astar(
         return abs(cell[0] - exit_[0]) + abs(cell[1] - exit_[1])
 
     best_cost: dict[Coord, int] = {entry: 0}
-    # heap entries: (priority, cost_so_far, cell, path_so_far)
     heap: list[tuple[int, int, Coord, list[str]]] = [
         (heuristic(entry), 0, entry, [])
     ]
@@ -115,7 +112,7 @@ def solve_astar(
             return path
 
         if cost > best_cost.get((x, y), float("inf")):
-            continue  # a shorter route to this cell was already found
+            continue
 
         for direction, (dx, dy) in DIRECTION.items():
             nx, ny = x + dx, y + dy
@@ -147,7 +144,7 @@ def solve(
     exit_: Coord,
     algorithm: str = "bfs",
 ) -> Optional[list[str]]:
-    """Finds the shortest path using the requested algorithm.
+    """Find the shortest path using the requested algorithm.
 
     Args:
         grid: maze grid, one wall-bitmask per cell (grid[y][x]).
@@ -262,21 +259,17 @@ def solve_bfs_animated(
 def _exact_distances_to(
     grid: list[list[int]], target: Coord
 ) -> dict[Coord, int]:
-    """Computes the true (wall-aware) graph distance from `target` to
-    every cell reachable from it, via one full BFS starting at target.
+    """
+    Compute the exact distance.
 
-    Wall openings are symmetric in this maze format (carving a passage
-    clears the matching bit on both sides, see mazegen.generator), so
-    a BFS run backwards from `target` gives exactly the same distances
-    as a forward BFS from any cell to `target` would.
+    Use BFS to calculate distances from target.
 
     Args:
-        grid: maze grid, one wall-bitmask per cell (grid[y][x]).
-        target: the cell to measure distances to (typically the exit).
+        grid: Maze grid with wall bitmasks.
+        target: Target cell used as the BFS starting point.
 
     Returns:
-        A dict mapping each cell reachable from `target` to its exact
-        number of moves to reach it. Unreachable cells are absent.
+        A dictionary mapping each reachable cell to its distance from target.
     """
     height = len(grid)
     width = len(grid[0]) if height else 0
@@ -297,65 +290,47 @@ def _exact_distances_to(
             queue.append((nx, ny))
     return dist
 
+
 def solve_astar_animated(
     grid: list[list[int]],
     entry: Coord,
     exit_: Coord,
 ) -> tuple[Optional[list[str]], list[dict[str, Any]]]:
-    """A* solver for animation, using an exact (wall-aware) heuristic.
+    """
+    Animate A* solving with an exact wall-aware heuristic.
 
-    `solve_astar` (the plain solver used for the graded shortest path
-    and the output file) uses the textbook Manhattan-distance
-    heuristic. That heuristic is admissible and gives a correct
-    shortest path, but it only measures straight-line distance - it
-    can't "see" walls, so a Manhattan-guided search still visibly
-    backtracks whenever it heads toward a cell that *looks* close but
-    is actually walled off.
-
-    This animated variant instead precomputes the exact graph distance
-    from every cell to `exit_` with one full BFS starting at the exit
-    (see `_exact_distances_to`), before the animated search even
-    starts. That "perfect" heuristic already reflects every wall, so
-    A* here expands, one by one, exactly the cells on a shortest path
-    to the exit - no wasted exploration, no backtracking. This exact
-    heuristic is kept out of `solve_astar`/`solve` on purpose: it is
-    display-only, since computing it amounts to solving the maze once
-    already, which isn't the point of the graded solver.
-
-    Mirrors the step schema produced by `solve_bfs_animated` (keys
-    'visited', 'frontier', 'current', 'path', 'type') so that a single
-    display-side animator can replay either algorithm without knowing
-    which one actually ran.
+    Use BFS from the exit to compute exact distances, then use
+    these distances as the A* heuristic to avoid unnecessary exploration.
 
     Args:
-        grid: maze grid, one wall-bitmask per cell (grid[y][x]).
-        entry: (x, y) starting coordinates.
-        exit_: (x, y) target coordinates.
+        grid: Maze grid with wall bitmasks.
+        entry: Starting coordinates (x, y).
+        exit_: Target coordinates (x, y).
 
     Returns:
-        A tuple (path, steps) where:
-            - path: list of moves or None if no path
-            - steps: list of dicts with keys:
-                'visited': set of expanded ("closed") cells
-                'frontier': set of cells currently in the open set
-                'current': current cell being explored
-                'path': current path to current cell
-                'type': 'init', 'explore', 'discover', or 'found'
+        A tuple containing the solution path and animation steps.
     """
     height = len(grid)
     width = len(grid[0]) if height else 0
     true_dist = _exact_distances_to(grid, exit_)
 
     def heuristic(cell: Coord) -> int:
-        # Falls back to Manhattan only if `cell` is somehow unreachable
-        # from the exit (shouldn't happen on a connected maze) so the
-        # search still terminates instead of raising a KeyError.
+        """Estimate the distance from a cell to the exit.
+
+        Uses exact distances when available and Manhattan distance as a safe
+        fallback for unreachable cells.
+
+        Args:
+            cell: The cell to evaluate.
+
+        Returns:
+            The estimated distance to the exit.
+        """
         return true_dist.get(
             cell, abs(cell[0] - exit_[0]) + abs(cell[1] - exit_[1])
         )
 
     best_cost: dict[Coord, int] = {entry: 0}
-    # heap entries: (priority, cost_so_far, cell, path_so_far)
     heap: list[tuple[int, int, Coord, list[str]]] = [
         (heuristic(entry), 0, entry, [])
     ]
@@ -365,7 +340,6 @@ def solve_astar_animated(
     def open_cells() -> set[Coord]:
         return {cell for _, _, cell, _ in heap}
 
-    # Initial state
     steps.append({
         'visited': set(closed),
         'frontier': open_cells(),
@@ -378,11 +352,10 @@ def solve_astar_animated(
         _, cost, (x, y), path = heapq.heappop(heap)
 
         if cost > best_cost.get((x, y), float("inf")):
-            continue  # a shorter route to this cell was already found
+            continue
 
         closed.add((x, y))
 
-        # Exploration state
         steps.append({
             'visited': set(closed),
             'frontier': open_cells(),
@@ -445,7 +418,7 @@ def solve_animated(
     exit_: Coord,
     algorithm: str = "bfs",
 ) -> tuple[Optional[list[str]], list[dict[str, Any]]]:
-    """Finds a shortest path with the requested algorithm, recording steps.
+    """Find a shortest path with the requested algorithm, recording steps.
 
     Centralizes the animated solve the same way `solve` centralizes the
     plain solve: pick the algorithm named by `algorithm` (typically
@@ -477,7 +450,7 @@ def solve_animated(
 
 
 def load_hex_grid(path: str) -> list[list[int]]:
-    """Loads a maze wall-grid from a hex-encoded maze file.
+    """Load a maze wall-grid from a hex-encoded maze file.
 
     Reads lines of hex digits until the first blank line (ignores any
     trailing entry/exit/path section that may follow it).

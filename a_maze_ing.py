@@ -17,7 +17,7 @@ from solver import solve
 
 
 def error_exit(message: str) -> NoReturn:
-    """Prints a clear error message to stderr and exits with code 1.
+    """Print a clear error message to stderr and exits with code 1.
 
     Args:
         message: human-readable description of the error.
@@ -33,7 +33,7 @@ def save_maze(
     path: list[str],
     filename: str,
 ) -> None:
-    """Writes the maze to a file using the hexadecimal wall format.
+    """Write the maze to a file using the hexadecimal wall format.
 
     Format (see subject IV.5): one hex digit per cell (row by row),
     then a blank line, then entry coordinates, exit coordinates and
@@ -59,7 +59,7 @@ def save_maze(
 
 
 def display_maze(maze: MazeGenerator, config: MazeConfig) -> None:
-    """Displays the maze graphically using MLX.
+    """Display the maze graphically using MLX.
 
     Falls back gracefully (prints a warning, does not crash) if MLX
     cannot be imported or initialized (e.g. no display/GPU available).
@@ -92,7 +92,7 @@ def display_maze(maze: MazeGenerator, config: MazeConfig) -> None:
 
 
 def print_hex_maze(maze: MazeGenerator) -> None:
-    """Prints a maze in hexadecimal format, one row per line.
+    """Print a maze in hexadecimal format, one row per line.
 
     Args:
         maze: the generated maze to print.
@@ -135,9 +135,6 @@ def main() -> None:
         error_exit(str(exc))
     if path is None:
         error_exit("no path found between entry and exit (maze not connected)")
-
-    print(f"Shortest path ({len(path)} steps): {''.join(path)}")
-
     display_maze(maze, config)
 
 
