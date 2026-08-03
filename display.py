@@ -12,6 +12,7 @@ from mlx import Mlx
 from mazegen.generator import MazeGenerator, ALL_WALLS, EAST, SOUTH, OPPOSITE
 from solver import solve, solve_animated, Coord
 from a_maze_ing import save_maze
+import signal
 
 
 class MlxDisplay:
@@ -83,6 +84,7 @@ class MlxDisplay:
         self._gen_start_time: float = 0.0
         self._gen_current: Optional[Tuple[int, int]] = None
 
+        signal.signal(signal.SIGINT, self._handle_sigint)
         self.bfs_mode: bool = False
         self.bfs_animator: Optional['BFSAnimator'] = None
         self.bfs_frame_counter: int = 0
@@ -636,6 +638,10 @@ class MlxDisplay:
 
     def _on_close(self, data: Any) -> None:
         """Handle window close button."""
+        self._quit()
+    
+    def _handle_sigint(self, signum: int, frame: Any) -> None:
+        """Handle Ctrl+C like Q/Esc."""
         self._quit()
 
     def _quit(self) -> None:
