@@ -135,6 +135,14 @@ def main() -> None:
         error_exit(str(exc))
     if path is None:
         error_exit("no path found between entry and exit (maze not connected)")
+
+    try:
+        save_maze(maze, config.entry, config.exit, path, config.output_file)
+    except OSError as exc:
+        error_exit(f"cannot write output file '{config.output_file}': {exc}")
+
+    print(f"Maze written to '{config.output_file}'.")
+
     display_maze(maze, config)
 
 
