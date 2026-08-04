@@ -1,4 +1,4 @@
-*This project was made as part of the 42 school course, by lanasain and njrafano.*
+*This project has been created as part of the 42 curriculum by lanasain, njrafano.*
 
 # A-Maze-ing
 
@@ -15,7 +15,7 @@ The project uses:
 * animation of the generation and the solving;
 * a reusable generation module, made as a Python package called `mazegen`.
 
-The maximum size supported is **70 × 35 cells**, and a `SEED` lets you create the same maze again.
+The maximum size supported is **75 × 35 cells**, and a `SEED` lets you create the same maze again.
 
 ## Features
 
@@ -168,7 +168,7 @@ SEED=42
 
 | Parameter     | Description                          | Example                 |
 | ------------- | ------------------------------------- | ------------------------ |
-| `WIDTH`       | Width of the maze (max **70**)        | `WIDTH=25`               |
+| `WIDTH`       | Width of the maze (max **75**)        | `WIDTH=25`               |
 | `HEIGHT`      | Height of the maze (max **35**)       | `HEIGHT=20`              |
 | `ENTRY`       | Coordinates of the entry              | `ENTRY=0,0`              |
 | `EXIT`        | Coordinates of the exit               | `EXIT=0,14`              |
@@ -196,44 +196,179 @@ SEED=42
 
 ---
 
-# 6. Contribution
+# Team and project management
 
 The project was made by a team of two: **lanasain** and **njrafano**.
+
+## Roles
 
 | Member       | Contributions                                                                                                                        |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **lanasain** | Parsing and checking of the configuration, BFS, A*, A* heuristic, animation of the DFS generation, putting all parts together        |
 | **njrafano** | Maze generation with DFS, maze structure, MiniLibX, graphic display, animation of the solvers                                        |
 
+## Planning and how it evolved
+
+We first split the work along the two obvious layers of the project: config
+parsing / solving (lanasain) and generation / display (njrafano), and agreed
+on the grid and wall-bitmask format early so the two sides could be developed
+in parallel without waiting on each other. The initial plan was:
+
+1. Config parsing + a minimal generator producing a valid (but not
+   necessarily perfect) maze.
+2. Output file writing, then BFS solving.
+3. MLX display with the required interactions (regenerate, path, colors).
+4. Bonuses: A*, animations, the reusable `mazegen` package.
+
+In practice, step 1 took longer than expected because of all the edge cases
+in the config file (duplicate keys, out-of-bounds entry/exit, the "42"
+pattern overlapping entry/exit, etc.), so the MLX display started later than
+planned. The reusable-package requirement was also underestimated at first:
+our first version of `mazegen` still imported the CLI's `config.py`, which
+only became obvious once we tried installing the built wheel in an isolated
+environment — we then refactored `MazeGenerator` to take plain arguments
+(`width`, `height`, `entry`, `exit_`, `perfect`, `seed`) instead of a config
+object, precisely so it has zero dependency on the rest of the repository.
+
+## What worked well / what could be improved
+
+**Worked well:**
+* Agreeing on the wall-bitmask grid format up front let both of us work in
+  parallel without much friction.
+* Writing the DFS generation as an explicit stack (instead of real
+  recursion) avoided `RecursionError` on large mazes and made it trivial to
+  record steps for the generation animation "for free".
+* Centralizing BFS/A* behind a single `solve()` / `solve_animated()` entry
+  point in `solver.py` made it easy to add A* after BFS already worked, and
+  to reuse the exact same rendering code for both in the MLX display.
+
+**Could be improved:**
+* The reusable `mazegen` module should have been designed as fully
+  standalone from the very first commit instead of being refactored later;
+  we now systematically test every "reusable" module by installing its
+  built wheel in a throw-away virtual environment before considering it
+  done.
+* Error handling in `config.py` was not fully consistent (one validation
+  path printed and exited directly instead of raising `ConfigError` like
+  every other check) — this is the kind of inconsistency that peer review
+  catches faster than working alone.
+* More automated tests (currently mostly manual/ad-hoc scripts) would have
+  caught both issues above earlier.
+
+## Tools used
+
+* **Python 3.10**, `venv` for dependency isolation.
+* **flake8** and **mypy `--strict`** (via the `lint` / `lint-strict` Makefile
+  targets) to keep the codebase clean as we went, not just before handing
+  in.
+* **`build`** (PyPA) to produce the `mazegen` wheel/sdist from
+  `pyproject.toml`.
+* **Git** for version control and code review between the two of us.
+* **Claude** (see "Use of AI" above) as a learning and debugging aid.
 
 # The `mazegen` package
 
-The maze generator is built as **one single class**, in an independent module. It can be reused in another project, separately from the MLX display.
+The maze generator is built as **one single class**, `MazeGenerator`, inside a
+standalone module. It has **no dependency on the rest of this repository**
+(not even on `config.py`): it only uses the Python standard library, so it can
+be pip-installed and imported from any other project, completely separately
+from the MLX display, the CLI, or the config parser.
 
 ## Structure
 
 ```text
 mazegen/
+├── __init__.py      # exposes MazeGenerator and MazeGenerationError
 └── generator.py
 ```
 
-Main class: `MazeGenerator`. The structure it creates does not have to be the same as the format of the output file.
+Main class: `MazeGenerator`. The structure it creates (a grid of wall
+bitmasks, see below) does not have to be the same as the format of the
+output file — `a_maze_ing.py` is the piece that turns it into that format.
 
-## Creating and customizing the generator
+## Instantiate and use the generator (basic example)
 
 ```python
-from mazegen.generator import MazeGenerator
+from mazegen import MazeGenerator
+
+# width and height are the only required arguments.
+generator = MazeGenerator(width=50, height=30)
+generator.generate()
+
+# The carved maze is available right away as a grid of wall bitmasks.
+print(generator.width, generator.height)   # 50 30
+print(generator.grid[0][0])                # e.g. 9 (North+West closed)
+```
+
+## Passing custom parameters (size, seed, entry/exit, perfect)
+
+```python
+from mazegen import MazeGenerator, MazeGenerationError
 
 generator = MazeGenerator(
     width=50,
     height=30,
-    seed=123
+    entry=(0, 0),        # optional, defaults to (0, 0)
+    exit_=(49, 29),       # optional, defaults to (width - 1, height - 1)
+    perfect=True,         # optional, default True: exactly one path
+    seed=123,              # optional: same seed -> same maze every time
 )
-
-maze = generator.generate()
+try:
+    generator.generate()
+except MazeGenerationError as exc:
+    # e.g. the '42' pattern would overlap the entry or exit cell
+    print(f"Could not generate maze: {exc}")
 ```
 
-`width` and `height` set the size (max 70 × 35), and `seed` makes the generation repeatable.
+* `width` / `height`: number of cells (this project's CLI caps them at
+  75 × 35, but the class itself has no built-in limit).
+* `perfect=False` produces a braided maze (loops added, still no 3×3 fully
+  open area).
+* `seed` makes the run reproducible: the same `seed` with the same
+  `width`/`height` always regenerates an identical maze.
+
+## Accessing the generated structure and a solution
+
+```python
+from collections import deque
+from mazegen import MazeGenerator
+
+generator = MazeGenerator(width=20, height=15, seed=1)
+generator.generate()
+
+# The maze itself: one wall-bitmask per cell, grid[y][x].
+# Bit 1=North, 2=East, 4=South, 8=West (1 = wall closed, 0 = open).
+grid = generator.grid
+entry, exit_ = generator.entry, generator.exit_
+print(f"{generator.width}x{generator.height} maze, "
+      f"'42' pattern placed: {generator.pattern_placed}")
+
+# Access at least a solution: a minimal BFS shortest-path example
+# (the actual project uses solver.py, which is not part of mazegen).
+DIRS = {1: (0, -1), 2: (1, 0), 4: (0, 1), 8: (-1, 0)}
+
+
+def shortest_path(grid, entry, exit_):
+    seen = {entry}
+    queue = deque([(entry, [])])
+    while queue:
+        (x, y), path = queue.popleft()
+        if (x, y) == exit_:
+            return path
+        for direction, (dx, dy) in DIRS.items():
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < len(grid[0]) and 0 <= ny < len(grid)):
+                continue
+            if (nx, ny) in seen or grid[y][x] & direction:
+                continue
+            seen.add((nx, ny))
+            queue.append(((nx, ny), path + [direction]))
+    return None
+
+
+path = shortest_path(grid, entry, exit_)
+print(f"Solution length: {len(path) if path else 'no path found'}")
+```
 
 ## `pyproject.toml`
 
@@ -244,7 +379,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mazegen"
-version = "1.0"
+version = "1.1.0"
 description = "Maze generation"
 authors = [
   { name="lanasain", email="lanasain@student.42antananarivo.mg" },
@@ -265,30 +400,34 @@ This creates (it is also installed through `make install`):
 
 ```text
 dist/
-├── mazegen-1.0-py3-none-any.whl
-└── mazegen-1.0.tar.gz
+├── mazegen-1.1.0-py3-none-any.whl
+└── mazegen-1.1.0.tar.gz
 ```
 
-Installation:
+Installation, from anywhere, in a fresh virtual environment (no need for the
+rest of this repository, `config.py` included):
 
 ```bash
-python3 -m pip install dist/mazegen-1.0-py3-none-any.whl
+python3 -m pip install dist/mazegen-1.1.0-py3-none-any.whl
 ```
 
 then, in another project:
 
 ```python
-from mazegen.generator import MazeGenerator
+from mazegen import MazeGenerator
 ```
 
-The package must stay possible to rebuild from the source files, and it must be available at the root of the repository:
+The package must stay possible to rebuild from the source files, and it must
+be available at the root of the repository:
 
 ```text
 A-Maze-ing/
 │
 ├── mlx-2.2-py3-none-any.whl
+├── mazegen-1.1.0-py3-none-any.whl
 ├── pyproject.toml
 ├── mazegen/
+│   ├── __init__.py
 │   └── generator.py
 │
 └── README.md
