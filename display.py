@@ -6,13 +6,20 @@ Adapted for the existing MazeGenerator class.
 
 import random
 import time
+import signal
+import sys
 from typing import Tuple, Set, Optional, Dict, Any, List
 from collections import deque
-from mlx import Mlx
 from mazegen.generator import MazeGenerator, ALL_WALLS, EAST, SOUTH, OPPOSITE
 from solver import solve, solve_animated, Coord
 from a_maze_ing import save_maze
-import signal
+
+try:
+    from mlx import Mlx
+except ImportError:
+    print("Import Error: install with:")
+    print("make install")
+    sys.exit(1)
 
 
 class MlxDisplay:
@@ -28,16 +35,16 @@ class MlxDisplay:
     COLORS: Dict[str, int] = {
         'wall': 0xFFFFFFFF,
         'floor': 0xFF000000,
-        'entry': 0xFF2ECC71,     
-        'exit': 0xFFE74C3C,      
-        'path': 0xFF888888,      
-        'pattern42': 0xFFFFFFFF,  
-        'gen_current': 0xFFF1C40F,  
+        'entry': 0xFF2ECC71,
+        'exit': 0xFFE74C3C,
+        'path': 0xFF888888,
+        'pattern42': 0xFFFFFFFF,
+        'gen_current': 0xFFF1C40F,
         'visited': 0xFF16213e,
         'frontier': 0xFF0f3460,
         'current': 0xFFe94560,
     }
-    # Wall color (changeable via 'C' key)
+
     _wall_color: int = COLORS['wall']
 
     def __init__(self, maze: MazeGenerator, cell_size: int = 30,
@@ -55,12 +62,8 @@ class MlxDisplay:
         """
         self.maze = maze
         self.cell_size = cell_size
-        self.show_path: bool = False  # Path hidden by default
-        # Wall line thickness in pixels. Change this value to make the
-        # maze separators thicker or thinner.
+        self.show_path: bool = False
         self.wall_thickness: int = 2
-
-        # Store entry and exit
         self.entry = entry
         self.output_file = output_file
         if exit_pos is None:
@@ -68,7 +71,6 @@ class MlxDisplay:
         else:
             self.exit_pos = exit_pos
 
-        # --- Path animation attributes ---
         self._path_cells: List[Tuple[int, int]] = []
         self._path_progress: int = 0
         self._animating: bool = False
@@ -83,8 +85,8 @@ class MlxDisplay:
         self._gen_target_duration: float = 15
         self._gen_start_time: float = 0.0
         self._gen_current: Optional[Tuple[int, int]] = None
-
         signal.signal(signal.SIGINT, self._handle_sigint)
+
         self.bfs_mode: bool = False
         self.bfs_animator: Optional['BFSAnimator'] = None
         self.bfs_frame_counter: int = 0
@@ -116,12 +118,10 @@ class MlxDisplay:
             self.mlx.mlx_release(self.mlx_ptr)
             raise RuntimeError("mlx_new_window() failed")
 
-        # --- 3. Create the image buffer ---
         self.img = self.mlx.mlx_new_image(
             self.mlx_ptr, self.width, self.height)
         self.data, self.bpp, self.sl, _ = self.mlx.mlx_get_data_addr(self.img)
 
-        # --- 4. Register hooks ---
         self.mlx.mlx_key_hook(self.win, self._on_key, None)
         self.mlx.mlx_hook(self.win, 33, 0, self._on_close, None)
         self.mlx.mlx_loop_hook(self.mlx_ptr, self._render, None)
@@ -136,7 +136,7 @@ class MlxDisplay:
         print("  [D] Display solution instantly")
         print("  [C] Change wall colors")
         print("  [S] Save")
-        print("  [G] Replay the maze generation animation" )
+        print("  [G] Replay the maze generation animation")
         print("  [Q] / [Esc] Quit")
 
     def _start_generation_animation(self) -> None:
@@ -188,12 +188,11 @@ class MlxDisplay:
 
         self._path_directions = path_dirs
 
-        # Convert directions to coordinates (ordered list)
         x, y = self.entry
         coords = [(x, y)]
         dir_map = {}
         for d in path_dirs:
-            dir_map[(x, y)] = d  # Store direction for current cell
+            dir_map[(x, y)] = d
             if d == 'N':
                 y -= 1
             elif d == 'S':
@@ -211,10 +210,6 @@ class MlxDisplay:
     def _update_path(self) -> None:
         """Update path after maze regeneration."""
         self._solve_path()
-
-    # ==========================================================
-    #  RENDERING
-    # ==========================================================
 
     def _put_pixel(self, x: int, y: int, color: int) -> None:
         """Write a pixel to the image buffer."""
@@ -253,13 +248,13 @@ class MlxDisplay:
             self, x1: int, y1: int, x2: int, y2: int,
             color: int, thickness: int = 4) -> None:
         """Draw a thick line."""
-        if x1 == x2:  # Vertical line
+        if x1 == x2:
             for i in range(thickness):
                 self._draw_line(x1 - i, y1, x2 - i, y2, color)
-        elif y1 == y2:  # Horizontal line
+        elif y1 == y2:
             for i in range(thickness):
                 self._draw_line(x1, y1 - i, x2, y2 - i, color)
-        else:  # Diagonal line - offset multiple lines
+        else:
             for i in range(thickness):
                 self._draw_line(x1 - i, y1 - i, x2 - i, y2 - i, color)
 
@@ -291,9 +286,7 @@ class MlxDisplay:
         else:
             return
 
-        # Body of the arrow
         self._draw_thick_line(x1, y1, x2, y2, color, thickness)
-        # Arrowhead
         self._draw_line(x2, y2, x3, y3, color)
         self._draw_line(x2, y2, x4, y4, color)
 
@@ -308,14 +301,14 @@ class MlxDisplay:
             self.mlx_ptr, self.win, self.img, 0, 0)
 
     def _render(self, data: Any) -> None:
-        """Called every frame by mlx_loop_hook."""
-        # Generation (DFS carving) animation runs first and exclusively:
-        # nothing else is meaningful to animate while walls are still
-        # being revealed (path/BFS both operate on the finished maze).
+        """Update animations and render the current frame.
+
+        Args:
+            data: Unused MLX loop hook data.
+        """
         if self._gen_animating:
             self._advance_generation()
         else:
-            # Progressive path animation
             if self._animating:
                 self._frame_counter += 1
                 if self._frame_counter >= self._animation_speed:
@@ -323,10 +316,8 @@ class MlxDisplay:
                     if self._path_progress < len(self._path_cells):
                         self._path_progress += 1
                     else:
-                        self._animating = False  # Animation complete
+                        self._animating = False
 
-            # BFS auto-play animation
-            # BFS auto-play animation
         if self.bfs_mode and self.bfs_animator:
 
             if not self.bfs_animator.is_finished():
@@ -338,13 +329,12 @@ class MlxDisplay:
                     self.bfs_animator.next_step()
 
             else:
-                # Keep the last animation state forever
                 self.bfs_final_state = self.bfs_animator.get_state(
                     self.bfs_animator.current_step
                 )
 
                 self.bfs_mode = False
-                self.bfs_animator = None        
+                self.bfs_animator = None
 
         self._clear()
 
@@ -376,13 +366,15 @@ class MlxDisplay:
         self._draw_info()
 
     def _advance_generation(self) -> None:
-        """Reveals DFS steps of the generation animation, paced by
-        real elapsed time rather than by the number of hook calls.
+        """Reveal DFS generation steps progressively.
+
+        Reveals DFS steps of the generation animation, paced by real
+        elapsed time rather than by the number of hook calls.
 
         Each revealed step reopens the wall pair recorded by
-        MazeGenerator._remove_wall on self._gen_grid, and moves the
-        "current cell" cursor to the newly carved cell, mimicking the
-        recursive-backtracker's frontier as it explores/backtracks.
+        MazeGenerator._remove_wall on ``self._gen_grid`` and moves the
+        current-cell cursor to the newly carved cell, mimicking the
+        recursive backtracker as it explores and backtracks.
         """
         elapsed = time.monotonic() - self._gen_start_time
         target = min(
@@ -406,9 +398,6 @@ class MlxDisplay:
             self._gen_steps)
         grid = self._gen_grid if generating else self.maze.grid
 
-        # Visible path cells (progressive or full). The solution path is
-        # only meaningful once the maze is fully carved, so it stays
-        # hidden while the generation animation is still running.
         visible_path = set()
         if self.show_path and not generating:
             if self._animating:
@@ -423,7 +412,6 @@ class MlxDisplay:
                 py = y * self.cell_size + 1
                 walls = grid[y][x]
 
-                # --- Determine background color ---
                 if generating and (x, y) == self._gen_current:
                     color = self.COLORS['gen_current']
                 elif (x, y) == self.entry:
@@ -431,7 +419,7 @@ class MlxDisplay:
                 elif (x, y) == self.exit_pos:
                     color = self.COLORS['exit']
                 elif (x, y) in visible_path:
-                    color = self.COLORS['path']  # Highlight path cells
+                    color = self.COLORS['path']
                 elif walls == ALL_WALLS:
                     color = self.COLORS['pattern42']
                 else:
@@ -439,7 +427,6 @@ class MlxDisplay:
 
                 self._draw_rect(px, py, self.cell_size, self.cell_size, color)
 
-                # --- Draw arrow if cell is in path (except entry/exit) ---
                 pos = (x, y)
                 if (
                      pos in visible_path and
@@ -448,13 +435,12 @@ class MlxDisplay:
                     if direction:
                         cx = px + self.cell_size // 2
                         cy = py + self.cell_size // 2
-                        arrow_size = self.cell_size // 3  # Smaller arrow
+                        arrow_size = self.cell_size // 3
                         self._draw_arrow(
                             cx, cy, direction,
                             self.COLORS['path'],
                             size=arrow_size, thickness=2)
 
-                # --- Walls ---
                 wall_color = self._wall_color
                 if walls & EAST:
                     self._draw_thick_line(
@@ -468,7 +454,6 @@ class MlxDisplay:
                                           wall_color,
                                           thickness=self.wall_thickness)
 
-        # Outer borders
         wall_color = self._wall_color
         t = self.wall_thickness
         self._draw_thick_line(0, 0, self.width, 0, wall_color, thickness=t)
@@ -501,7 +486,6 @@ class MlxDisplay:
         frontier = state.get('frontier', deque())
         current = state.get('current', self.entry)
 
-        # Build current path coordinates
         path_cells = set()
         if state.get('path'):
             x, y = self.entry
@@ -524,7 +508,6 @@ class MlxDisplay:
                 walls = grid[y][x]
                 pos = (x, y)
 
-                # Determine cell color
                 if pos == self.entry:
                     color = colors['entry']
                 elif pos == self.exit_pos:
@@ -544,7 +527,6 @@ class MlxDisplay:
 
                 self._draw_rect(px, py, self.cell_size, self.cell_size, color)
 
-                # Draw walls
                 wall_color = colors['wall']
                 if walls & EAST:
                     self._draw_thick_line(px + self.cell_size, py,
@@ -557,7 +539,6 @@ class MlxDisplay:
                                           py + self.cell_size,
                                           wall_color, thickness=2)
 
-        # Outer borders
         wall_color = colors['wall']
         self._draw_thick_line(0, 0, self.width, 0, wall_color, thickness=2)
         self._draw_thick_line(0, self.height - 1, self.width, self.height - 1,
@@ -577,25 +558,22 @@ class MlxDisplay:
         elif self.bfs_mode and self.bfs_animator:
             progress = int(self.bfs_animator.get_progress() * 100)
             algo_name = self.bfs_animator.algorithm.upper()
-            status = algo_name if not self.bfs_animator.is_finished() else "DONE"
+            status = (algo_name
+                      if not self.bfs_animator.is_finished()
+                      else "DONE")
             text = (f"{algo_name}: {status} | Progress: {progress}% | "
                     f"Size: {self.maze.width}x{self.maze.height}")
         else:
             text = (f"Size: {self.maze.width}x{self.maze.height} | "
                     f"Path: {'ON' if self.show_path else 'OFF'} | "
                     f"Steps: {steps} | "
-                    f"42: {'✅' if self.maze.pattern_placed else '⚠️'}")
+                    f"42: {'OK' if self.maze.pattern_placed else 'KO'}")
 
         self.mlx.mlx_string_put(
             self.mlx_ptr, self.win, 10, y + 25, 0xFFFFFFFF, text)
 
-    # ==========================================================
-    #  EVENT HANDLERS
-    # ==========================================================
-
     def _on_key(self, keycode: int, data: Any) -> None:
         """Handle keyboard events."""
-
         if keycode in (65307, 113):
             self._quit()
 
@@ -618,39 +596,34 @@ class MlxDisplay:
 
         elif keycode in (100, 68):
             self._show_solution()
-    
+
         elif keycode in (98, 66):
             self._skip_generation_animation()
             self._start_bfs_animation()
 
         elif keycode in (99, 67):
             self._change_wall_color()
-    
+
         elif keycode in (103, 71):
             self._start_generation_animation()
 
-    
         elif keycode in (115, 83):
             self._save_output_file()
-        
+
         elif keycode in (103, 71):
             self._start_generation_animation()
 
     def _on_close(self, data: Any) -> None:
         """Handle window close button."""
         self._quit()
-    
-    def _handle_sigint(self, signum: int, frame: Any) -> None:
-        """Handle Ctrl+C like Q/Esc."""
-        self._quit()
 
     def _quit(self) -> None:
         """Quit cleanly."""
         self.mlx.mlx_loop_exit(self.mlx_ptr)
 
-    # ==========================================================
-    #  ACTIONS
-    # ==========================================================
+    def _handle_sigint(self, signum: int, frame: Any) -> None:
+        """Handle Ctrl+C like Q/Esc."""
+        self._quit()
 
     def _regenerate(self) -> None:
         """Re-generate a new maze."""
@@ -667,12 +640,10 @@ class MlxDisplay:
         self.maze = new_maze
         self._update_path()
         self._start_generation_animation()
-        # Reset path animation state
         self._animating = False
         self._path_progress = 0
         self._frame_counter = 0
-        self.show_path = False  # Path is hidden by default
-        # Reset BFS animation state
+        self.show_path = False
         self.bfs_mode = False
         self.bfs_animator = None
         self.bfs_frame_counter = 0
@@ -687,7 +658,6 @@ class MlxDisplay:
 
     def _start_bfs_animation(self) -> None:
         """Start the solve animation."""
-
         algorithm = getattr(self.maze.config, "algorithm", "bfs")
 
         self.bfs_animator = BFSAnimator(
@@ -713,10 +683,9 @@ class MlxDisplay:
                     print(f"BFS complete! Path: {len(self.bfs_animator.path)}")
                 else:
                     print("BFS complete! No path found")
-    
+
     def _save_output_file(self) -> None:
         """Save maze when S key is pressed."""
-
         save_maze(
             self.maze,
             self.entry,
@@ -726,7 +695,7 @@ class MlxDisplay:
         )
 
         print(f"Maze saved to '{self.output_file}'.")
-    
+
     def _show_solution(self) -> None:
         """Display the complete solution instantly."""
         self._skip_generation_animation()
@@ -737,10 +706,6 @@ class MlxDisplay:
         self.bfs_complete_counter = 0
         self.show_path = True
         self._animating = False
-         
-    # ==========================================================
-    #  RUN & CLEANUP
-    # ==========================================================
 
     def run(self) -> None:
         """Start the MLX loop."""
@@ -795,13 +760,26 @@ class BFSAnimator:
         self.current_step = 0
 
     def get_state(self, step_index: int) -> dict[str, Any]:
-        """Get the state at a specific step index."""
+        """Get the maze state at a specific animation step.
+
+        Args:
+            step_index: Index of the animation step to retrieve.
+
+        Returns:
+            The maze state corresponding to the given step index. Returns
+            the last state if the index is out of range, or an empty
+            dictionary if no steps exist.
+        """
         if step_index >= len(self.steps):
             return self.steps[-1] if self.steps else {}
         return self.steps[step_index]
 
     def next_step(self) -> dict[str, Any]:
-        """Advance to the next step and return its state."""
+        """Advance to the next animation step.
+
+        Returns:
+            The maze state after advancing to the next step.
+        """
         if self.current_step < len(self.steps) - 1:
             self.current_step += 1
         return self.get_state(self.current_step)
@@ -811,11 +789,20 @@ class BFSAnimator:
         self.current_step = 0
 
     def is_finished(self) -> bool:
-        """Check if animation has reached the end."""
+        """Check whether the animation has reached the final step.
+
+        Returns:
+            True if the animation is finished, otherwise False.
+        """
         return self.current_step >= len(self.steps) - 1
 
     def get_progress(self) -> float:
-        """Get animation progress as a float between 0 and 1."""
+        """Get the current animation progress.
+
+        Returns:
+            A float between 0.0 and 1.0 representing the animation completion.
+            Returns 0.0 if no animation steps are available.
+        """
         if not self.steps:
             return 0.0
         return self.current_step / max(1, len(self.steps) - 1)

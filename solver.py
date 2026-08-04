@@ -201,7 +201,6 @@ def solve_bfs_animated(
     queue.append((entry, []))
     steps = []
 
-    # Initial state
     steps.append({
         'visited': set(visited),
         'frontier': deque(queue),
@@ -213,7 +212,6 @@ def solve_bfs_animated(
     while queue:
         (x, y), path = queue.popleft()
 
-        # Exploration state
         steps.append({
             'visited': set(visited),
             'frontier': deque(queue),
@@ -243,7 +241,6 @@ def solve_bfs_animated(
             visited.add((nx, ny))
             queue.append(((nx, ny), path + [DIRECTION_LETTER[direction]]))
 
-            # Discovery state
             steps.append({
                 'visited': set(visited),
                 'frontier': deque(queue),

@@ -13,3 +13,7 @@ authors = [
 
 [tool.setuptools]
 py-modules = ["mazegen.generator"]
+
+[[tool.mypy.overrides]]
+module = "mlx.*"
+ignore_missing_imports = true
